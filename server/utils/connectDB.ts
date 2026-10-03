@@ -7,7 +7,7 @@ export async function connectDb() {
     // Keep trying to connect as long as the app is disconnected from mongoDB
     await mongoose.connect(mongoUri);
     logger.info(`Connected to DB, ${mongoUri}`);
-  } catch (e) {
+  } catch {
     process.exit(1);
   }
 }

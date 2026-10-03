@@ -1,259 +1,146 @@
 import { type Request, type Response } from "express";
-import Availability, {
-  type IAvailability,
-  isAvailabilityList,
-} from "../models/Availability.js";
+import mongoose from "mongoose";
+import Availability from "../models/Availability.js";
 import Reservation from "../models/Reservation.js";
 import Premise from "../models/Premise.js";
 import Space from "../models/Space.js";
-import { intersectingTimespans } from "../utils/dateFunctions.js";
+import User from "../models/User.js";
+import { acquireRoomLock } from "../utils/roomLock.js";
 import asyncErrorHandler from "../middleware/asyncErrorHandler.js";
 
-// Get all availabilities on the premise that are partially or totally
-// contained between startdate and enddate time parameters received in the body.
-export const getAvailabilitiesWithPremiseId = asyncErrorHandler(
-  async (req: Request, res: Response) => {
-    const { startdate, enddate } = req.body;
-    const { premiseId } = req.params;
+function parseInterval(startValue: unknown, endValue: unknown) {
+  const start = new Date(String(startValue ?? ""));
+  const end = new Date(String(endValue ?? ""));
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start >= end) return null;
+  return { start, end };
+}
 
-    if (!startdate)
-      return res.status(400).json({ error: "startdate missing from body" });
-    if (!enddate)
-      return res.status(400).json({ error: "enddate missing from body" });
+async function canManage(premiseId: mongoose.Types.ObjectId, userId: mongoose.Types.ObjectId) {
+  const premise = await Premise.findById(premiseId);
+  return premise?.users.some((id) => String(id) === String(userId)) ?? false;
+}
 
-    let availabilities = await Availability.find({
-      premise: premiseId,
-    }).populate("reservations");
+export const getAvailabilitiesForSpace = asyncErrorHandler(async (req: Request, res: Response) => {
+  const spaceId = String(req.params.spaceId);
+  if (!mongoose.isValidObjectId(spaceId)) return res.status(400).json({ error: "Invalid space ID." });
+  const space = await Space.findById(spaceId);
+  if (!space) return res.status(404).json({ error: "Space not found." });
+  const availabilities = await Availability.find({ space: space._id })
+    .sort({ startdate: 1 }).populate("reservations");
+  res.status(200).json(availabilities);
+});
 
-    if (!availabilities || availabilities.length === 0) {
-      // No availabilities exist for this premise, or the premise does not exist.
-      return res.status(204).json([]);
-    }
+export const getAvailabilitiesWithPremiseId = asyncErrorHandler(async (req: Request, res: Response) => {
+  const premiseId = String(req.params.id);
+  const interval = parseInterval(req.body.startdate, req.body.enddate);
+  if (!mongoose.isValidObjectId(premiseId) || !interval) {
+    return res.status(400).json({ error: "Choose a premise and a valid start and end time." });
+  }
+  const availabilities = await Availability.find({
+    premise: premiseId,
+    startdate: { $lt: interval.end },
+    enddate: { $gt: interval.start },
+  }).populate("reservations");
+  res.status(200).json(availabilities);
+});
 
-    // Filter availabilities that are partially or totally contained between startdate and enddate.
-    availabilities = availabilities.filter((availability) => {
-      if (startdate <= availability.startdate < enddate) return true;
-      if (startdate < availability.enddate <= enddate) return true;
-      if (
-        availability.startdate <= startdate &&
-        enddate <= availability.enddate
-      )
-        return true;
+export const getAvailability = asyncErrorHandler(async (req: Request, res: Response) => {
+  if (req.params.id) {
+    const id = String(req.params.id);
+    if (!mongoose.isValidObjectId(id)) return res.status(400).json({ error: "Invalid availability ID." });
+    const availability = await Availability.findById(id).populate("reservations");
+    if (!availability) return res.status(404).json({ error: "Availability not found." });
+    return res.status(200).json(availability);
+  }
+  const availabilities = await Availability.find().sort({ startdate: 1 });
+  res.status(200).json({ success: true, availabilities });
+});
 
-      return false;
+export const createAvailability = asyncErrorHandler(async (req: Request, res: Response) => {
+  const interval = parseInterval(req.body.startdate, req.body.enddate);
+  if (!interval || !mongoose.isValidObjectId(req.body.spaceId)) {
+    return res.status(400).json({ error: "Choose a room and a valid start and end time." });
+  }
+  const space = await Space.findById(req.body.spaceId);
+  if (!space) return res.status(404).json({ error: "Space not found." });
+  if (!await canManage(space.premise, req.user._id)) {
+    return res.status(403).json({ error: "You cannot manage availability for this premise." });
+  }
+  const release = await acquireRoomLock(space._id);
+  if (!release) return res.status(503).json({ error: "This room is busy. Try again shortly." });
+  try {
+    const overlap = await Availability.exists({
+      space: space._id,
+      startdate: { $lt: interval.end },
+      enddate: { $gt: interval.start },
     });
-
-    res.status(200).json(availabilities);
-  }
-);
-
-// Desc: Get all availabilities
-// @route GET /api/availabilities
-// @access Public
-export const getAvailability = asyncErrorHandler(
-  async (_req: Request, res: Response) => {
-    const availabilities = await Availability.find();
-    res.status(200).json({ success: true, msg: "Show all availabilities", availabilities});
-  }
-);
-
-// Desc: Create new availability
-// @route POST /api/availabilities
-// @access Private
-export const createAvailability = asyncErrorHandler(
-  async (req: Request, res: Response) => {
-    const { startdate, enddate, spaceId } = req.body;
-    const user = req.user;
-
-    if (!startdate)
-      return res.status(400).json({ error: "startdate missing from body" });
-    if (!enddate)
-      return res.status(400).json({ error: "enddate missing from body" });
-    if (!spaceId)
-      return res.status(400).json({ error: "spaceId missing from body" });
-
-    const space = await Space.findById(spaceId).populate("availabilities");
-
-
-    if (!space)
-      return res
-        .status(404)
-        .json({ error: `Space not found with id: ${spaceId}` });
-
-    // Make sure the space.availabilities field is an Availability list
-    // by using the typeguard function: isAvailabilityList.
-    if (!isAvailabilityList(space.availabilities)) {
-      return res.status(500).json({
-        error: `The availabilities field of space: ${space._id} is not of type IAvailability[]`,
-      });
-    }
-
-    // Check that the new availability does not overlap with other availabilities
-    // on the same space.
-    if (
-      intersectingTimespans(
-        startdate,
-        enddate,
-        space.availabilities as IAvailability[]
-      )
-    ) {
-      return res.status(400).json({ error: "Availabilities cannot overlap." });
-    }
-
-    const premise = await Premise.findById(space.premise);
-    console.log(premise)
-
-    if (!premise) {
-      return res
-        .status(404)
-        .json({ error: `Premise not found with id: ${space.premise}` });
-    }
-
-    // Check if the user is authorized to create an availability for this premise.
-    if (!premise.users.some((uid) => user._id.equals(uid))) {
-      return res.status(401).json({
-        error: `You are not authorized to create availabilities for premise: ${spaceId}`,
-      });
-    }
-
-    let availability = new Availability({
-      creator: user._id,
-      startdate,
-      enddate,
-      space: spaceId,
-      premise: premise._id,
+    if (overlap) return res.status(409).json({ error: "Availability already exists at that time." });
+    const availability = await Availability.create({
+      creator: req.user._id, startdate: interval.start, enddate: interval.end,
+      space: space._id, premise: space.premise,
     });
-
-    availability = await availability.save();
-
-    user.availabilities.push(availability._id);
-
-    await user.save();
-
-    res.status(201).json(availability);
+    await Promise.all([
+      Space.updateOne({ _id: space._id }, { $addToSet: { availabilities: availability._id } }),
+      User.updateOne({ _id: req.user._id }, { $addToSet: { availabilities: availability._id } }),
+    ]);
+    return res.status(201).json(availability);
+  } finally {
+    await release();
   }
-);
+});
 
-// Change Availability startdate and/or enddate
-export const updateAvailability = asyncErrorHandler(
-  async (req: Request, res: Response) => {
-    const { startdate, enddate } = req.body;
-    const user = req.user;
-    const { id } = req.params;
-
-    if (!startdate && !enddate) {
-      return res
-        .status(400)
-        .json({ error: "Both startdate and enddate are missing." });
-    }
-
-    const availability = await Availability.findById(id);
-
-    if (!availability) {
-      return res
-        .status(404)
-        .json({ error: `Availability not found with id: ${id}` });
-    }
-
-    const space = await Space.findById(availability.space).populate(
-      "availabilities"
-    );
-
-    if (!space) {
-      // This should never happen, but typescript complained about space
-      // migth being null so it was included.
-      return res.status(404).json({
-        error: `The space with id: ${availability.space} that was
-                associated with availability: ${id} was not found.`,
-      });
-    }
-
-    // Make sure the space.availabilities field is an Availability list
-    // by using the typeguard function: isAvailabilityList.
-    if (!isAvailabilityList(space.availabilities)) {
-      return res.status(500).json({
-        error: `The availabilities field of space: ${space._id} is not of type IAvailability[]`,
-      });
-    }
-
-    // Check that the availability does not overlap with other availabilities
-    // on the same space.
-    if (
-      intersectingTimespans(
-        startdate,
-        enddate,
-        (space.availabilities as IAvailability[]).filter((a) =>
-          a._id.equals(id)
-        )
-      )
-    ) {
-      return res.status(400).json({ error: "Availabilities cannot overlap." });
-    }
-
-    const premise = await Premise.findById(availability.premise);
-
-    if (!premise) {
-      return res
-        .status(404)
-        .json({ error: `Premise not found with id: ${availability.premise}` });
-    }
-
-    // Check if the user is authorized to edit an availability on this premise.
-    if (!premise.users.some((uid) => user._id.equals(uid))) {
-      return res.status(401).json({
-        error: `You are not authorized to create availabilities for premise: ${premise._id}`,
-      });
-    }
-
-    // Update the existing fields.
-    if (startdate) availability.startdate = startdate;
-    if (enddate) availability.enddate = enddate;
-
-    const updatedAavailability = await availability.save();
-
-    res.status(200).json(updatedAavailability);
+export const updateAvailability = asyncErrorHandler(async (req: Request, res: Response) => {
+  const availability = await Availability.findById(req.params.id);
+  if (!availability) return res.status(404).json({ error: "Availability not found." });
+  if (!await canManage(availability.premise, req.user._id)) {
+    return res.status(403).json({ error: "You cannot manage availability for this premise." });
   }
-);
-
-// Desc: Delete availability
-// @route DELETE /api/availabilities/:id
-// @access Private
-
-export const deleteAvailability = asyncErrorHandler(
-  async (req: Request, res: Response) => {
-    const { id } = req.params;
-    const user = req.user;
-
-    const availability = await Availability.findById(id);
-
-    if (!availability) {
-      return res
-        .status(404)
-        .json({ error: `Availability not found with id: ${id}` });
-    }
-
-    const premise = await Premise.findById(availability.premise);
-
-    if (!premise) {
-      return res
-        .status(404)
-        .json({ error: `Premise not found with id: ${availability.premise}` });
-    }
-
-    // Check if the user is authorized to remove availability from this premise.
-    if (!premise.users.some((uid) => user._id.equals(uid))) {
-      return res.status(401).json({
-        error: `You are not authorized to remove availabilities from premise: ${premise._id}`,
-      });
-    }
-
-    // Remove the reservartions associated with this availability.
-    availability.reservations.forEach(async (reservation_id) => {
-      await Reservation.findByIdAndDelete(reservation_id);
+  const release = await acquireRoomLock(availability.space);
+  if (!release) return res.status(503).json({ error: "This room is busy. Try again shortly." });
+  try {
+    const current = await Availability.findById(availability._id);
+    if (!current) return res.status(404).json({ error: "Availability not found." });
+    const interval = parseInterval(req.body.startdate ?? current.startdate, req.body.enddate ?? current.enddate);
+    if (!interval) return res.status(400).json({ error: "Choose a valid start and end time." });
+    const overlap = await Availability.exists({
+      _id: { $ne: current._id }, space: current.space,
+      startdate: { $lt: interval.end }, enddate: { $gt: interval.start },
     });
-
-    await Availability.findByIdAndDelete(id);
-
-    res.status(204).json({ message: "Availability deleted" });
+    if (overlap) return res.status(409).json({ error: "Availability already exists at that time." });
+    const outsideReservation = await Reservation.exists({ availability: current._id,
+      $or: [{ startdate: { $lt: interval.start } }, { enddate: { $gt: interval.end } }],
+    });
+    if (outsideReservation) return res.status(409).json({ error: "Existing reservations fall outside that time." });
+    current.startdate = interval.start;
+    current.enddate = interval.end;
+    await current.save();
+    return res.status(200).json(current);
+  } finally {
+    await release();
   }
-);
+});
+
+export const deleteAvailability = asyncErrorHandler(async (req: Request, res: Response) => {
+  const availability = await Availability.findById(req.params.id);
+  if (!availability) return res.status(404).json({ error: "Availability not found." });
+  if (!await canManage(availability.premise, req.user._id)) {
+    return res.status(403).json({ error: "You cannot manage availability for this premise." });
+  }
+  const release = await acquireRoomLock(availability.space);
+  if (!release) return res.status(503).json({ error: "This room is busy. Try again shortly." });
+  try {
+    const current = await Availability.findById(availability._id);
+    if (!current) return res.status(404).json({ error: "Availability not found." });
+    if (await Reservation.exists({ availability: current._id })) {
+      return res.status(409).json({ error: "Cancel its reservations before removing this availability." });
+    }
+    await Availability.deleteOne({ _id: current._id });
+    await Promise.all([
+      Space.updateOne({ _id: current.space }, { $pull: { availabilities: current._id } }),
+      User.updateOne({ _id: current.creator }, { $pull: { availabilities: current._id } }),
+    ]);
+    return res.status(204).send();
+  } finally {
+    await release();
+  }
+});

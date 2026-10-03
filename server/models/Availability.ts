@@ -1,38 +1,35 @@
-import { Document, Schema, Model, model } from "mongoose";
-import { type IUser } from "./User.js";
-import { type IPremise } from "./Premise.js";
-import { type ISpace } from "./Space.js";
+import { Document, Schema, Types, Model, model } from "mongoose";
 import { type IReservation } from "./Reservation.js";
 
 // For internal model definition only.
 export interface IAvailability extends Document {
-  creator: Schema.Types.ObjectId | IUser;
+  creator: Types.ObjectId;
   startdate: Date;
   enddate: Date;
-  premise: Schema.Types.ObjectId | IPremise;
-  space: Schema.Types.ObjectId | ISpace;
-  reservations: Schema.Types.ObjectId[] | IReservation[];
+  premise: Types.ObjectId;
+  space: Types.ObjectId;
+  reservations: Types.ObjectId[] | IReservation[];
 }
 
 // Typeguard to check if the value is of type IAvailability.
 export function isAvailability(value: IAvailability): value is IAvailability {
   return (
     value &&
-    value._id instanceof Schema.Types.ObjectId &&
+    value._id instanceof Types.ObjectId &&
     value.startdate instanceof Date &&
     value.enddate instanceof Date &&
-    value.creator instanceof Schema.Types.ObjectId &&
-    value.premise instanceof Schema.Types.ObjectId &&
-    value.space instanceof Schema.Types.ObjectId &&
+    value.creator instanceof Types.ObjectId &&
+    value.premise instanceof Types.ObjectId &&
+    value.space instanceof Types.ObjectId &&
     value.reservations.every(
-      (element) => element instanceof Schema.Types.ObjectId
+      (element) => element instanceof Types.ObjectId
     )
   );
 }
 
 // Typeguard to check if the value is of type IAvailability[].
 export function isAvailabilityList(
-  value: Schema.Types.ObjectId[] | IAvailability[]
+  value: Types.ObjectId[] | IAvailability[]
 ) {
   return (
     Array.isArray(value) &&

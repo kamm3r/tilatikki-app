@@ -1,5 +1,4 @@
-import { type Document, Schema, type Model, model } from "mongoose";
-import { type IPremise } from "./Premise.js";
+import { type Document, Schema, Types, type Model, model } from "mongoose";
 import { type IAvailability } from "./Availability.js";
 import { type IReservation } from "./Reservation.js";
 
@@ -7,11 +6,14 @@ import { type IReservation } from "./Reservation.js";
 export interface ISpace extends Document {
   name: string;
   area?: number;
-  premise: Schema.Types.ObjectId | IPremise;
-  building: Schema.Types.ObjectId;
-  floor: Schema.Types.ObjectId;
-  availabilities: Schema.Types.ObjectId[] | IAvailability[];
-  reservations: Schema.Types.ObjectId[] | IReservation[];
+  premise: Types.ObjectId;
+  building: Types.ObjectId;
+  floor: number;
+  availabilities: Types.ObjectId[] | IAvailability[];
+  reservations: Types.ObjectId[] | IReservation[];
+  mapPolygon?: { x: number; y: number }[];
+  reservationLockOwner?: Types.ObjectId;
+  reservationLockUntil?: Date;
 }
 
 // Typeguard to check if the value is of type ISpace[].
@@ -29,6 +31,14 @@ const spaceSchema = new Schema<ISpace>({
   floor: { type: Number, required: true },
   availabilities: [{ type: Schema.Types.ObjectId, ref: "Availability" }],
   reservations: [{ type: Schema.Types.ObjectId, ref: "Reservation" }],
+  // A short-lived database lock keeps overlapping booking writes serial on standalone MongoDB.
+  reservationLockOwner: Schema.Types.ObjectId,
+  reservationLockUntil: Date,
+  // Percent coordinates over the building's floor blueprint (0–100).
+  mapPolygon: [{
+    x: { type: Number, required: true, min: 0, max: 100 },
+    y: { type: Number, required: true, min: 0, max: 100 },
+  }],
 });
 
 const Space: Model<ISpace> = model<ISpace>("Space", spaceSchema);

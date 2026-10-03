@@ -1,22 +1,11 @@
 import { type Request, type Response } from "express";
 import Building from "../models/Building.js";
-import Space from "../models/Space.js";
 import asyncErrorHandler from "../middleware/asyncErrorHandler.js";
 
 
 // Desc: Get all buildings
 // @route GET /api/buildings
 // @access Public
-
-export const getAllBuildings = asyncErrorHandler(async (_req: Request, res: Response) => {});
-
-// Desc: Create new building
-// @route POST /api/buildings
-// @access Private
-
-export const createBuilding = asyncErrorHandler(async (req: Request, res: Response) => {});
-
-
 
 // Desc: Get single building
 // @route GET /api/buildings/:id

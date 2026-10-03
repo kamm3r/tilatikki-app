@@ -1,10 +1,10 @@
 
 **/node_modules/
 **/.env
-**/package-lock.json
+**/.env.*
+!**/.env.example
 **/*.code.workspace*
 
 **/build/
 **/dist/
 .DS_Store
-

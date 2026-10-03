@@ -1,7 +1,7 @@
-import { Schema, model, Document } from "mongoose";
-import { ISpace } from "./Space.js";
+import { Schema, Types, model, Document } from "mongoose";
 
 export interface IBuilding extends Document {
+  location?: { latitude: number; longitude: number };
   name: string;
   floors: number;
   rooms: number 
@@ -14,11 +14,15 @@ export interface IBuilding extends Document {
     image: string;
   }[];
   facade: string[];
-  space: {_id: Schema.Types.ObjectId[] | ISpace[]}[];
+  space: Types.ObjectId[];
 }
 
 // Define the building schema.
 const buildingSchema = new Schema<IBuilding>({
+  location: {
+    type: new Schema({ latitude: { type: Number, required: true, min: -90, max: 90 }, longitude: { type: Number, required: true, min: -180, max: 180 } }, { _id: false }),
+    default: undefined,
+  },
   name: { type: String, required: true, minlength: 1, maxlength: 100 },
   floors: { type: Number, required: true },
   rooms: { type: Number, require: true }, // Adjust the ref if the model name is different

@@ -1,6 +1,6 @@
 interface ApiResponse<T> {
   success: boolean;
-  data: T;
+  premises: T;
 }
 
 // interface Floor {
@@ -29,6 +29,7 @@ export interface Space {
   floor: number;
   availabilities: string[];
   reservations: string[];
+  mapPolygon?: { x: number; y: number }[];
 }
 
 export interface Reservation {
@@ -42,6 +43,7 @@ export interface Reservation {
 }
 
 export interface BuildingDetails {
+  location?: { latitude: number; longitude: number };
   _id: string;
   name: string;
   floors: number;
@@ -53,6 +55,7 @@ export interface BuildingDetails {
 }
 
 export interface Premise {
+  location?: { latitude: number; longitude: number };
   _id: string;
   name: string;
   address: string;
@@ -74,7 +77,7 @@ export interface PremiseStateProps {
 export const initialPremiseState: PremiseStateProps = {
   premisesData: {
     success: false,
-    data: [],
+    premises: [],
   },
   premiseData: {
     _id: "",

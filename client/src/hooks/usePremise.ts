@@ -1,6 +1,7 @@
 // Import the `useDispatch` and `bindActionCreators` hooks from React Redux.
 import { useDispatch } from "react-redux";
 import { bindActionCreators } from "redux";
+import { useMemo } from "react";
 
 // Import the action creators from the Redux store.
 import { premiseActionCreators } from "../Redux/store";
@@ -11,5 +12,8 @@ export const usePremiseAction = () => {
   const dispatch = useDispatch();
 
   // Bind the action creators to the `dispatch` function.
-  return bindActionCreators(premiseActionCreators, dispatch);
+  return useMemo(
+    () => bindActionCreators(premiseActionCreators, dispatch),
+    [dispatch],
+  );
 };

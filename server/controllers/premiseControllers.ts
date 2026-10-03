@@ -1,4 +1,4 @@
-import { type Request, type Response, type NextFunction } from "express";
+import { type Request, type Response } from "express";
 import mongoose from "mongoose";
 import asyncHandler from "../middleware/asyncErrorHandler.js";
 import Premise from "../models/Premise.js";
@@ -7,8 +7,11 @@ import { createPremiseAggregationPipeline } from "../middleware/advancedResults.
 // Desc: Get all availabilities
 // @route GET /api/premise
 // @access Public
-export const getPremise = asyncHandler( async(req: Request, res: Response<any>, next: NextFunction) => {
-  const premises = await Premise.find({});
+export const getPremise = asyncHandler( async(_req: Request, res: Response) => {
+  const premises = await Premise.find({}).populate({
+    path: "buildings", select: "name floors rooms location space",
+    populate: { path: "space", select: "name floor area building premise" },
+  });
     if(!premises) res.status(404).json({ success: false, msg: "No Premise found" });
 
   res.status(200).json({ success: true, premises });
@@ -23,7 +26,7 @@ export const getPremise = asyncHandler( async(req: Request, res: Response<any>, 
 
 export const getSinglePremise = async (req: Request, res: Response) => {
   try {
-    const premiseId = req.params.id;
+    const premiseId = String(req.params.id);
     
     // Ensure correct extraction and conversion of query parameters
     const buildingId = req.query.building ? new mongoose.Types.ObjectId(req.query.building as string) : undefined;

@@ -6,15 +6,9 @@ export const intersectingTimespans = (
   enddate: Date,
   timespans: IAvailability[] | IReservation[]
 ) => {
-  timespans.forEach((timespan) => {
-    if (startdate < timespan.startdate && timespan.startdate < enddate)
-      return true;
-    if (startdate < timespan.enddate && timespan.enddate < enddate) return true;
-    if (timespan.startdate <= startdate && enddate <= timespan.enddate)
-      return true;
-  });
-
-  return false;
+  return timespans.some(
+    (timespan) => startdate < timespan.enddate && timespan.startdate < enddate,
+  );
 };
 
 export const duringTimespan = (
@@ -22,8 +16,7 @@ export const duringTimespan = (
   enddate: Date,
   timespan: IAvailability | IReservation
 ) => {
-  if (startdate < timespan.startdate) return false;
-  if (timespan.enddate < enddate) return false;
-
-  return true;
+  return startdate < enddate &&
+    timespan.startdate <= startdate &&
+    enddate <= timespan.enddate;
 };

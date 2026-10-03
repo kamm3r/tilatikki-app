@@ -1,5 +1,4 @@
 import express, { type Request, type Response } from "express";
-import mongoose from "mongoose";
 import cors from "cors";
 import path from "node:path";
 import cookieParser from "cookie-parser";
@@ -49,17 +48,12 @@ app.use("/api/users", userRoutes);
 app.use("/api/building", buildingRoutes);
 app.use("/api/group", group);
 
-app.use("/api/*", unknownEndpoint);
+app.use("/api/{*splat}", unknownEndpoint);
 app.use(errorHandler);
 
 // Paths that are not part of the API are handled by the frontend.
-app.get("*", (_req: Request, res: Response) => {
+app.get("/{*splat}", (_req: Request, res: Response) => {
   res.sendFile(path.join(import.meta.dirname, "../client/dist/index.html"));
-});
-
-// Close the database connection when the app is closed.
-app.on("close", () => {
-  mongoose.connection.close();
 });
 
 app.listen(config.port, async () => {

@@ -1,10 +1,7 @@
-import { type Document, Schema, type Model, model } from "mongoose";
+import { type Document, Schema, Types, type Model, model } from "mongoose";
 import crypto from "node:crypto";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { type IReservation } from "./Reservation.js";
-import { type IAvailability } from "./Availability.js";
-import { type IPremise } from "./Premise.js";
 import * as config from "../utils/config.js";
 
 // For internal model definition only.
@@ -14,12 +11,12 @@ export interface IUser extends Document {
   email: string;
   password: string;
   role: string;
-  premises: Schema.Types.ObjectId[] | IPremise[];
-  availabilities: Schema.Types.ObjectId[] | IAvailability[];
-  reservations: Schema.Types.ObjectId[] | IReservation[];
+  premises: Types.ObjectId[];
+  availabilities: Types.ObjectId[];
+  reservations: Types.ObjectId[];
   resetPasswordToken: string | undefined;
   resetPasswordExpire: Date | undefined;
-  credentials: Schema.Types.ObjectId;
+  credentials: Types.ObjectId;
   getSignedJwtToken(): string;
   matchPassword(enteredPassword: string): Promise<boolean>;
   getResetPasswordToken(): string;
@@ -65,9 +62,9 @@ const userSchema = new Schema<IUser>(
   { timestamps: true },
 );
 
-userSchema.pre<IUser>("save", async function (next) {
+userSchema.pre<IUser>("save", async function () {
   if (!this.isModified("password")) {
-    return next();
+    return;
   }
 
   const salt = await bcrypt.genSalt(10);
@@ -75,7 +72,6 @@ userSchema.pre<IUser>("save", async function (next) {
 
   this.password = hash;
 
-  next();
 });
 
 // Sign JWT and return

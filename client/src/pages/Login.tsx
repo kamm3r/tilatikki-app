@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -8,7 +8,6 @@ import { Button, buttonVariants } from "~/@/components/ui/button";
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -18,45 +17,39 @@ import { Input } from "~/@/components/ui/input";
 import { Toaster } from "~/@/components/ui/toaster";
 import { cn } from "~/@/lib/utils";
 import { useUserAction } from "~/hooks/useUser";
-import { useTypedSelector } from "~/hooks/useTypedSelector";
 
 const formSchema = z.object({
-  email: z
-    .string()
-    .regex(
-      /^[a-zA-Z]+\.+[a-zA-Z]+@(edu\.)?hel\.fi$/,
-      "Invalid email format first.last@hel.fi or @edu.hel.fi",
-    )
-    .min(2, {
-      message: "email must be at least 2 characters.",
-    })
-    .email("This is not a valid email."),
-  password: z
-    .string()
-    .min(10, "Password must be at least 10 characters long")
-    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
-    .regex(
-      /[^A-Za-z0-9]/,
-      "Password must contain at least one special character",
-    ),
+  email: z.string().trim().email("Anna kelvollinen sähköpostiosoite."),
+  password: z.string().min(1, "Anna salasana."),
 });
 
 export function Login() {
   const { loginUser, getMe } = useUserAction();
+  const [loginError, setLoginError] = useState("");
   const navigate = useNavigate();
-  const user = useTypedSelector((state) => state.user.currentUser);
+  const location = useLocation();
+  const returnState = location.state as {
+    from?: string;
+    times?: { start: string; end: string };
+    roomId?: string;
+    buildingId?: string;
+    floor?: number;
+  } | null;
+  const returnTo = returnState?.from?.startsWith("/") && !returnState.from.startsWith("//")
+    ? returnState.from : "/";
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
   });
 
-  // 2. Define a submit handler.
   async function onSubmit(values: z.infer<typeof formSchema>) {
-    // Do something with the form values.
-    // ✅ This will be type-safe and validated.
-    loginUser({ email: values.email, password: values.password });
-    getMe();
-    if (user) navigate("/");
+    setLoginError("");
+    await loginUser({ email: values.email, password: values.password });
+    if (new Cookies().get("tilatikkiToken")) {
+      await getMe();
+      navigate(returnTo, { replace: true, state: returnState });
+    } else {
+      setLoginError("Kirjautuminen epäonnistui. Tarkista sähköposti ja salasana.");
+    }
   }
 
   const cookies = new Cookies();
@@ -65,13 +58,13 @@ export function Login() {
   // TODO:fix this useEffect by removing it
   useEffect(() => {
     if (tilatikkiCookie) {
-      navigate("/");
+      navigate(returnTo, { replace: true, state: returnState });
     }
-  }, [tilatikkiCookie, navigate]);
+  }, [tilatikkiCookie, navigate, returnTo, returnState]);
 
   return (
     <>
-      <main className="container relative hidden grow flex-col items-center justify-center md:grid lg:max-w-none lg:grid-cols-2 lg:px-0">
+      <main className="container relative flex min-h-screen grow flex-col items-center justify-center p-6 md:grid lg:max-w-none lg:grid-cols-2 lg:px-0">
         <Link
           to="/register"
           className={cn(
@@ -124,9 +117,6 @@ export function Login() {
                           {...field}
                         />
                       </FormControl>
-                      <FormDescription>
-                        Sähköposti pitää olla @hel.fi tai @edu.hel.fi
-                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -144,15 +134,13 @@ export function Login() {
                           {...field}
                         />
                       </FormControl>
-                      <FormDescription>
-                        Salasana pitää olla vähintään 10 merkkiä pitkä
-                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                <Button disabled={form.formState.isLoading}>
-                  {form.formState.isLoading && (
+                {loginError && <p role="alert" className="text-sm text-destructive">{loginError}</p>}
+                <Button disabled={form.formState.isSubmitting}>
+                  {form.formState.isSubmitting && (
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
                       width="24"

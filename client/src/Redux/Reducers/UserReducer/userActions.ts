@@ -35,21 +35,17 @@ interface RegisterUser {
 }
 
 // Base URL for your API
-const API_BASE_URL = "http://localhost:5050/api"; // Adjust this as per your API's URL
+const API_BASE_URL = "/api";
 
 const cookies = new Cookies();
 
 // Save the token as a cookie.
 
-let token: string = "";
-
-export function setToken(newToken: string): string {
-  return (token = newToken);
-}
+const getToken = () => cookies.get("tilatikkiToken");
 
 export const config = () => {
   return {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${getToken()}` },
   };
 };
 
@@ -83,7 +79,7 @@ export function getUserById(id: string) {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${getToken()}`,
         },
       });
 
@@ -111,8 +107,7 @@ export function loginUser(credentials: { email: string; password: string }) {
         credentials,
       );
       const userData = response.data;
-      token = userData.token;
-      cookies.set("tilatikkiToken", token, {
+      cookies.set("tilatikkiToken", userData.token, {
         // Cookie expires in 3 days.
         expires: new Date(Date.now() + 1000 * 60 * 60 * 24 * 3),
         path: "/",
@@ -123,12 +118,13 @@ export function loginUser(credentials: { email: string; password: string }) {
         payload: userData,
       });
 
-      getMe();
+      return true;
     } catch (error) {
       dispatch({
         type: ActionTypes.LOGIN_USER_FAILURE,
         payload: error as Error,
       });
+      return false;
     }
   };
 }

@@ -1,6 +1,31 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@plugin "tailwindcss-animate";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
 
 @layer base {
   :root {
@@ -76,9 +101,52 @@
 }
 
 body {
-  font-family: 'Inter', sans-serif;
+  font-family: "Inter", sans-serif;
 }
 
 #root {
-  @apply flex flex-col h-screen;
+  @apply flex min-h-dvh min-w-0 flex-col;
+}
+
+.reservation-map-surface {
+  background-color: #edf1ef;
+  background-image:
+    linear-gradient(#d5dedc55 1px, transparent 1px),
+    linear-gradient(90deg, #d5dedc55 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.map-floating-panel {
+  border: 1px solid rgb(0 0 0 / 8%);
+  background: hsl(var(--background));
+  box-shadow:
+    0 2px 6px rgb(20 40 30 / 5%),
+    0 8px 24px rgb(20 40 30 / 8%);
+}
+
+.map-viewport {
+  scrollbar-width: none;
+}
+
+.map-viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.reservation-building-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid white;
+  border-radius: 50% 50% 50% 0;
+  background: #087855;
+  color: white;
+  box-shadow: 0 3px 12px #17211e44;
+  transform-origin: bottom center;
+  font-size: 25px;
+  font-weight: 600;
+}
+
+.reservation-building-pin:focus-visible {
+  outline: 3px solid #17211e;
+  outline-offset: 3px;
 }

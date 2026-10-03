@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import configureMockStore from "redux-mock-store";
-import thunk, { ThunkDispatch } from "redux-thunk";
+import { thunk, type ThunkDispatch } from "redux-thunk";
 import axios from "axios";
 import MockAdapter from "axios-mock-adapter";
 import { type Action } from "redux";
@@ -37,7 +37,7 @@ describe("updatePremise action", () => {
     const mockResponse = { response: "Premise updated successfully" };
 
     mockAxios
-      .onPut(`http://localhost:5050/api/premise/${premiseId}`)
+      .onPut(`/api/premise/${premiseId}`)
       .reply(200, mockResponse);
 
     const expectedActions = [

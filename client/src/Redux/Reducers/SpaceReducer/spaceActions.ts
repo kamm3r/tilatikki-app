@@ -2,7 +2,7 @@ import { Dispatch } from "redux";
 import { SpaceActionTypes } from "./spaceTypes";
 
 // Base URL for your API
-const API_BASE_URL = "http://localhost:5050/api"; // Adjust this as per your API's URL
+const API_BASE_URL = "/api";
 
 // Action for getting all premises
 export function getAllSpaces() {

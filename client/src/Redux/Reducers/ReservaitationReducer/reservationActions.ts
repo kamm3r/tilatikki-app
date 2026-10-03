@@ -5,11 +5,9 @@ import { type Space } from "../premiseState";
 import Cookies from "universal-cookie";
 
 // Base URL for your API
-const API_BASE_URL = "http://localhost:5050/api"; // Adjust this as per your API's URL
+const API_BASE_URL = "/api";
 
-const cookie = new Cookies();
-
-const token = cookie.get("tilatikkiToken");
+const getToken = () => new Cookies().get("tilatikkiToken");
 
 export function getReservation(id: string) {
   return async function (dispatch: Dispatch) {
@@ -19,9 +17,10 @@ export function getReservation(id: string) {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${getToken()}`,
         },
       });
+      if (!response.ok) throw new Error((await response.json()).error || "Reservation request failed");
       dispatch({
         type: ReservationActionTypes.GET_RESERVATION_SUCCESS,
         payload: await response.json(),
@@ -43,9 +42,10 @@ export function getAllReservations() {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${getToken()}`,
         },
       });
+      if (!response.ok) throw new Error((await response.json()).error || "Reservation request failed");
       dispatch({
         type: ReservationActionTypes.GET_ALL_RESERVATIONS_SUCCESS,
         payload: await response.json(),
@@ -72,7 +72,7 @@ export function createReservation(
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${getToken()}`,
         },
         body: JSON.stringify({
           startdate,
@@ -80,6 +80,7 @@ export function createReservation(
           availabilityId,
         }),
       });
+      if (!response.ok) throw new Error((await response.json()).error || "Reservation request failed");
       dispatch({
         type: ReservationActionTypes.CREATE_RESERVATION_SUCCESS,
         payload: await response.json(),
@@ -101,6 +102,7 @@ export function updateReservation(id: string, updatedData: Space) {
       const response = await axios.put(
         `${API_BASE_URL}/reservation/${id}`,
         updatedData,
+        { headers: { Authorization: `Bearer ${getToken()}` } },
       );
       dispatch({
         type: ReservationActionTypes.UPDATE_RESERVATION_SUCCESS,
@@ -120,7 +122,9 @@ export function deleteReservation(id: string) {
   return async function (dispatch: Dispatch) {
     dispatch({ type: ReservationActionTypes.DELETE_RESERVATION_BEGINS });
     try {
-      await axios.delete(`${API_BASE_URL}/reservation/${id}`);
+      await axios.delete(`${API_BASE_URL}/reservation/${id}`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
       dispatch({ type: ReservationActionTypes.DELETE_RESERVATION_SUCCESS });
     } catch (error) {
       dispatch({

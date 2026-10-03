@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import configureMockStore from "redux-mock-store";
-import thunk, { ThunkDispatch } from "redux-thunk";
+import { thunk, type ThunkDispatch } from "redux-thunk";
 import axios from "axios";
 import MockAdapter from "axios-mock-adapter";
 import { type Action } from "redux";
@@ -37,7 +37,7 @@ describe("createPremise action", () => {
     const mockResponse = { response: "Premise created successfully" };
 
     mockAxios
-      .onPost("http://localhost:5050/api/premise")
+      .onPost("/api/premise")
       .reply(200, mockResponse);
 
     const expectedActions = [

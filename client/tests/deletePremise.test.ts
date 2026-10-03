@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import configureMockStore from "redux-mock-store";
-import thunk, { ThunkDispatch } from "redux-thunk";
+import { thunk, type ThunkDispatch } from "redux-thunk";
 import axios from "axios";
 import MockAdapter from "axios-mock-adapter";
 import { type Action } from "redux";
@@ -20,7 +20,7 @@ describe("deletePremise action", () => {
     const premiseId = "65781b9e564772aec621d74f"; // Example premise ID
 
     mockAxios
-      .onDelete(`http://localhost:5050/api/premise/${premiseId}`)
+      .onDelete(`/api/premise/${premiseId}`)
       .reply(200);
 
     const expectedActions = [

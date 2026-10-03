@@ -1,1137 +1,1161 @@
-import React, {
-  Suspense,
+import {
   useEffect,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
+  type Dispatch,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+  type Ref,
+  type SetStateAction,
 } from "react";
-import { Box3, Color, Group, Object3DEventMap, Shape, Sphere } from "three";
-import { SVGLoader } from "three-stdlib";
-import { MapControls, Html, useProgress } from "@react-three/drei";
-import { Canvas, useLoader, extend } from "@react-three/fiber";
-import { format } from "date-fns";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  CalendarIcon,
-  CheckIcon,
-  PlusCircleIcon,
-  CircleIcon,
-  TimerIcon,
-  CheckCircleIcon,
-  XCircleIcon,
-  Users,
-  Coffee,
+  ChevronDown,
+  ArrowLeft,
+  Maximize2,
+  PanelLeftOpen,
+  SlidersHorizontal,
   X,
-  Loader2,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
+import Cookies from "universal-cookie";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { Button } from "~/@/components/ui/button";
-import { Calendar } from "~/@/components/ui/calendar";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "~/@/components/ui/card";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "~/@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "~/@/components/ui/select";
-import { cn } from "~/@/lib/utils";
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "~/@/components/ui/form";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "~/@/components/ui/tabs";
-import { useLocation, useParams } from "react-router-dom";
-import { Badge } from "~/@/components/ui/badge";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandSeparator,
-} from "~/@/components/ui/command";
-import { Command as CommandPrimitive } from "cmdk";
-import { Separator } from "~/@/components/ui/separator";
-import { fi } from "date-fns/locale";
-import { Input } from "~/@/components/ui/input";
-import {
-  ResizablePanelGroup,
-  ResizablePanel,
-  ResizableHandle,
-} from "~/@/components/ui/resizable";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "~/@/components/ui/dialog";
-import { Label } from "~/@/components/ui/label";
-import { Textarea } from "~/@/components/ui/textarea";
-import { useTypedSelector } from "~/hooks/useTypedSelector";
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+} from "~/@/components/ui/popover";
+import { FloorChooser } from "~/@/components/FloorChooser";
+import { ReservationRoomPanel } from "~/@/components/ReservationRoomPanel";
+import { ReservationMapControls } from "~/@/components/ReservationMapControls";
 import { usePremiseAction } from "~/hooks/usePremise";
-import { useReservationAction } from "~/hooks/useReservation";
-import { useUserAction } from "~/hooks/useUser";
+import { useTypedSelector } from "~/hooks/useTypedSelector";
+import {
+  type BuildingDetails,
+  type Space,
+} from "~/Redux/Reducers/premiseState";
+import {
+  getRoomStatus,
+  type Availability,
+  type RoomStatus,
+} from "~/utils/roomStatus";
+import { reservationsChangedEvent } from "~/utils/reservationEvents";
 
-extend({ SVGLoader });
+type Times = { start: string; end: string };
+type DisplayStatus = RoomStatus | "loading" | "error" | "invalid";
+type BookingFeedback = {
+  roomId: string;
+  kind: "saving" | "success" | "error" | "login";
+  message?: string;
+};
 
-function Loader() {
-  const { progress } = useProgress();
-  return <Html center>{progress} % loaded</Html>;
+const statusDetails: Record<
+  DisplayStatus,
+  { label: string; fill: string; stroke: string; dot: string; badge: string }
+> = {
+  available: {
+    label: "Vapaa",
+    fill: "#46bd96",
+    stroke: "#087855",
+    dot: "bg-emerald-600",
+    badge: "bg-emerald-50 text-emerald-800",
+  },
+  reserved: {
+    label: "Varattu",
+    fill: "#ef8b8b",
+    stroke: "#a02d37",
+    dot: "bg-rose-600",
+    badge: "bg-rose-50 text-rose-800",
+  },
+  unavailable: {
+    label: "Ei varattavissa",
+    fill: "#adb5bd",
+    stroke: "#66717d",
+    dot: "bg-slate-500",
+    badge: "bg-slate-100 text-slate-600",
+  },
+  loading: {
+    label: "Tarkistetaan",
+    fill: "#b7c4d0",
+    stroke: "#607587",
+    dot: "bg-slate-400",
+    badge: "bg-slate-100 text-slate-600",
+  },
+  error: {
+    label: "Tieto ei saatavilla",
+    fill: "#b7c4d0",
+    stroke: "#607587",
+    dot: "bg-slate-400",
+    badge: "bg-slate-100 text-slate-600",
+  },
+  invalid: {
+    label: "Valitse aika",
+    fill: "#b7c4d0",
+    stroke: "#607587",
+    dot: "bg-slate-400",
+    badge: "bg-slate-100 text-slate-600",
+  },
+};
+
+const dateTime = new Intl.DateTimeFormat("fi-FI", {
+  dateStyle: "short",
+  timeStyle: "short",
+});
+const showDate = (value: string) => dateTime.format(new Date(value));
+const showTime = new Intl.DateTimeFormat("fi-FI", { timeStyle: "short" });
+
+function showInterval(times: Times) {
+  return times.start.slice(0, 10) === times.end.slice(0, 10)
+    ? `${showDate(times.start)}–${showTime.format(new Date(times.end))}`
+    : `${showDate(times.start)} – ${showDate(times.end)}`;
 }
 
-const hoveredCursor =
-  "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXdCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBjbGlwLXBhdGg9InVybCgjY2xpcDApIj48Y2lyY2xlIGN4PSIzMiIgY3k9IjMyIiByPSIyNi41IiBmaWxsPSJibGFjayIgc3Ryb2tlPSJibGFjayIvPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgY2xpcC1ydWxlPSJldmVub2RkIiBkPSJNMzIgMzJMMzIgNDVIMzNMMzMgMzJINDVWMzFIMzNWMTlIMzJWMzFIMTlWMzJIMzJaIiBmaWxsPSJ3aGl0ZSIvPjxwYXRoIGQ9Ik0xLjk2MjMxIDEuOTYyMzFMMTMuNzAzMyA1LjEwODI5TDUuMTA4MjkgMTMuNzAzM0wxLjk2MjMxIDEuOTYyMzFaIiBmaWxsPSJibGFjayIvPjwvZz48ZGVmcz48Y2xpcFBhdGggaWQ9ImNsaXAwIj48cmVjdCB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIGZpbGw9IndoaXRlIi8+PC9jbGlwUGF0aD48L2RlZnM+PC9zdmc+";
-const defaultCursor =
-  "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXdCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBjbGlwLXBhdGg9InVybCgjY2xpcDApIj48Y2lyY2xlIGN4PSIzMiIgY3k9IjMyIiByPSIyNi41IiBzdHJva2U9ImJsYWNrIi8+PHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0zMiAzMkw0MS4xOTI0IDQxLjE5MjRMNDEuODk5NSA0MC40ODUzTDMyLjcwNzEgMzEuMjkyOUw0MS4xOTI0IDIyLjgwNzZMNDAuNDg1MyAyMi4xMDA1TDMyIDMwLjU4NThMMjMuNTE0NyAyMi4xMDA1TDIyLjgwNzYgMjIuODA3NkwzMS4yOTI5IDMxLjI5MjlMMjIuMTAwNSA0MC40ODUzTDIyLjgwNzYgNDEuMTkyNEwzMiAzMloiIGZpbGw9ImJsYWNrIi8+PHBhdGggZD0iTTUuMzY3MTEgMTIuNzM3M0wyLjY2OTQyIDIuNjY5NDJMMTIuNzM3MyA1LjM2NzExTDUuMzY3MTEgMTIuNzM3M1oiIHN0cm9rZT0iYmxhY2siLz48L2c+PGRlZnM+PGNsaXBQYXRoIGlkPSJjbGlwMCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiBmaWxsPSJ3aGl0ZSIvPjwvY2xpcFBhdGg+PC9kZWZzPjwvc3ZnPg==";
-
-function RoomHover({ x, y }: { x: number; y: number }) {
-  return (
-    <Html
-      scale={100}
-      rotation={[Math.PI / 1, Math.PI / 1, 0]}
-      position={[x - 50, y - 50, 1]}
-      transform
-      occlude
-      className="flex items-center justify-center"
-    >
-      <div className="flex h-14 w-14 grow flex-col items-center justify-center rounded-md bg-lime-950">
-        <p className="text-xs text-lime-100">x: {x}</p>
-        <p className="text-xs text-lime-100">y: {y}</p>
-      </div>
-    </Html>
-  );
+function localInput(date: Date) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
 }
 
-function Cell({
-  color,
-  shape,
-  fillOpacity,
+function defaultTimes() {
+  const start = new Date();
+  start.setHours(start.getHours() + 1, 0, 0, 0);
+  const end = new Date(start.getTime() + 60 * 60 * 1000);
+  return { start: localInput(start), end: localInput(end) };
+}
+
+function selectedInterval(times: Times) {
+  const start = new Date(times.start);
+  const end = new Date(times.end);
+  return Number.isFinite(start.getTime()) &&
+    Number.isFinite(end.getTime()) &&
+    start < end
+    ? { start, end }
+    : null;
+}
+
+function RoomBookingDetails({
+  room,
+  status,
+  times,
+  feedback,
+  loggedIn,
+  returnTo,
+  onReserve,
+  onEditTime,
 }: {
-  color: Color;
-  shape: Shape;
-  fillOpacity: number;
+  room: Space;
+  status: DisplayStatus;
+  times: Times;
+  feedback: BookingFeedback | null;
+  loggedIn: boolean;
+  returnTo: string;
+  onReserve: (room: Space) => void;
+  onEditTime: () => void;
 }) {
-  const [room, setRoom] = useState(false);
-  const [hovered, hover] = useState(false);
-  useEffect(() => {
-    return void ((
-      document.querySelector("#ref-body") as HTMLDivElement
-    ).style.cursor = hovered
-      ? `url('${hoveredCursor}'), pointer`
-      : `url('${defaultCursor}'), auto`);
-  }, [hovered]);
+  const bookedHere =
+    feedback?.roomId === room._id && feedback.kind === "success";
+  const currentFeedback = feedback?.roomId === room._id ? feedback : null;
+  const details = statusDetails[bookedHere ? "reserved" : status];
   return (
-    <mesh
-      onPointerOver={() => hover(true)}
-      onPointerOut={() => hover(false)}
-      onClick={() => {
-        console.log(
-          `uuid: ${shape.uuid}, x: ${shape.getPoint(0).x}, y:${
-            shape.getPoint(0).y
-          }`,
-        );
-        setRoom(!room);
-      }}
-      rotation={[0, 0, Math.PI / 1]}
-    >
-      <shapeGeometry args={[shape]} />
-      <meshBasicMaterial
-        color={hovered ? "hotpink" : color}
-        opacity={fillOpacity}
-        depthWrite={false}
-        transparent
-      />
-      {room && <RoomHover x={shape.getPoint(0).x} y={shape.getPoint(0).y} />}
-    </mesh>
-  );
-}
-
-function Svg({
-  url,
-  ref,
-}: {
-  url: string;
-  ref: React.MutableRefObject<Group<Object3DEventMap>>;
-}) {
-  const { paths } = useLoader(SVGLoader, url);
-  const shapes = useMemo(
-    () =>
-      paths.flatMap((p) =>
-        p.toShapes(true).map((shape) => ({
-          shape,
-          color: p.color,
-          fillOpacity: p.userData?.style.fillOpacity,
-        })),
-      ),
-    [paths],
-  );
-
-  return (
-    <group ref={ref}>
-      {shapes.map((props) => (
-        <Cell
-          key={props.shape.uuid}
-          color={props.color}
-          shape={props.shape}
-          fillOpacity={props.fillOpacity}
+    <div className="space-y-3">
+      <p
+        className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-medium ${details.badge}`}
+      >
+        <span
+          aria-hidden="true"
+          className={`h-2 w-2 shrink-0 rounded-full ${details.dot}`}
         />
-      ))}
-    </group>
+        {bookedHere ? "Varattu sinulle" : details.label}
+      </p>
+      {selectedInterval(times) && (
+        <dl className="bg-muted/60 space-y-2 rounded-lg p-3 text-xs">
+          <div className="flex flex-wrap justify-between gap-x-3 gap-y-1">
+            <dt className="text-muted-foreground">Alkaa</dt>
+            <dd className="tabular-nums">{showDate(times.start)}</dd>
+          </div>
+          <div className="flex flex-wrap justify-between gap-x-3 gap-y-1">
+            <dt className="text-muted-foreground">Päättyy</dt>
+            <dd className="tabular-nums">{showDate(times.end)}</dd>
+          </div>
+        </dl>
+      )}
+      <p className="text-muted-foreground text-sm leading-relaxed">
+        {bookedHere
+          ? "Löydät varauksen omista varauksista."
+          : status === "reserved"
+            ? "Tila on varattu valittuna aikana."
+            : status === "unavailable"
+              ? "Tälle ajalle ei ole varausmahdollisuutta."
+              : status === "error"
+                ? "Aikataulun tarkistus epäonnistui."
+                : status === "invalid"
+                  ? "Valitse kelvollinen aloitus- ja lopetusaika."
+                  : status === "loading"
+                    ? "Tarkistetaan varauksia..."
+                    : "Tila on varattavissa valittuna aikana."}
+      </p>
+      {currentFeedback?.kind === "error" && (
+        <p role="alert" className="text-destructive text-sm">
+          {currentFeedback.message}
+        </p>
+      )}
+      {bookedHere && (
+        <p role="status" className="text-sm font-medium text-emerald-700">
+          Varaus vahvistettu.
+        </p>
+      )}
+      {status === "available" && !bookedHere ? (
+        !loggedIn || currentFeedback?.kind === "login" ? (
+          <Button asChild className="w-full">
+            <Link
+              to="/login"
+              state={{
+                from: returnTo,
+                times,
+                roomId: room._id,
+                buildingId: room.building,
+                floor: room.floor,
+              }}
+            >
+              Kirjaudu sisään varaamaan
+            </Link>
+          </Button>
+        ) : (
+          <Button
+            className="w-full"
+            disabled={currentFeedback?.kind === "saving"}
+            onClick={() => onReserve(room)}
+          >
+            {currentFeedback?.kind === "saving"
+              ? "Varataan..."
+              : "Varaa tämä aika"}
+          </Button>
+        )
+      ) : !bookedHere && status !== "loading" && status !== "error" ? (
+        <Button variant="outline" className="w-full" onClick={onEditTime}>
+          Muuta aikaa
+        </Button>
+      ) : null}
+    </div>
   );
 }
 
-function Outline({ shape }: { shape: Shape }) {
-  return (
-    <mesh rotation={[0, 0, Math.PI / 1]}>
-      <shapeGeometry args={[shape]} />
-      <meshBasicMaterial depthWrite={false} color="#f8f8f8" />
-    </mesh>
+function FloorMap({
+  building,
+  floor,
+  floors,
+  title,
+  address,
+  controls,
+  settingsOpen,
+  onSettingsChange,
+  rooms,
+  query,
+  onQueryChange,
+  selectedRoomId,
+  times,
+  statusError,
+  roomStatus,
+  inspectedRoom,
+  feedback,
+  loggedIn,
+  returnTo,
+  sectionRef,
+  onFloorSelect,
+  onInspect,
+  onClose,
+  onReserve,
+  onEditTime,
+}: {
+  building: BuildingDetails;
+  floor: number | null;
+  floors: number[];
+  title: string;
+  address: string;
+  controls: ReactNode;
+  settingsOpen: boolean;
+  onSettingsChange: (open: boolean) => void;
+  rooms: Space[];
+  query: string;
+  onQueryChange: (query: string) => void;
+  selectedRoomId: string | null;
+  times: Times;
+  statusError: string;
+  roomStatus: (room: Space) => DisplayStatus;
+  inspectedRoom: Space | null;
+  feedback: BookingFeedback | null;
+  loggedIn: boolean;
+  returnTo: string;
+  sectionRef: Ref<HTMLElement>;
+  onFloorSelect: (floor: number) => void;
+  onInspect: (room: Space) => void;
+  onClose: () => void;
+  onReserve: (room: Space) => void;
+  onEditTime: () => void;
+}) {
+  const [zoom, setZoom] = useState(1);
+  const [desktopRoomsVisible, setDesktopRoomsVisible] = useState(true);
+  const [mobileRoomsExpanded, setMobileRoomsExpanded] = useState(false);
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+  const [imageRatio, setImageRatio] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const revealRoomsRef = useRef<HTMLButtonElement>(null);
+  const openerRef = useRef<SVGPolygonElement | null>(null);
+  const interactedOutsideRef = useRef(false);
+  const suppressClickRef = useRef(false);
+  const panRef = useRef<{
+    x: number;
+    y: number;
+    left: number;
+    top: number;
+    moved: boolean;
+  } | null>(null);
+  const image = building.blueprint.find((item) => item.floor === floor)?.image;
+  const mapped = building.space.filter(
+    (room) =>
+      room.floor === floor && room.mapPolygon && room.mapPolygon.length >= 3,
   );
-}
+  const inspectedStatus = inspectedRoom ? roomStatus(inspectedRoom) : null;
+  const polygon = inspectedRoom?.mapPolygon ?? [];
+  const popupX = polygon.length
+    ? (Math.min(...polygon.map((point) => point.x)) +
+        Math.max(...polygon.map((point) => point.x))) /
+      2
+    : 50;
+  const popupY = polygon.length
+    ? (Math.min(...polygon.map((point) => point.y)) +
+        Math.max(...polygon.map((point) => point.y))) /
+      2
+    : 50;
+  const fitWidth =
+    imageRatio && viewportSize.width
+      ? Math.min(viewportSize.width, viewportSize.height * imageRatio)
+      : viewportSize.width;
+  const canvasWidth = fitWidth * zoom;
+  const canvasHeight = imageRatio ? canvasWidth / imageRatio : 0;
+  const sidebarOpen = floor !== null && desktopRoomsVisible;
+  const controlsVisible = floor === null || settingsOpen;
 
-function BackgroundLayer({ url, floor }: { url: string; floor: string }) {
-  const { pathname } = useLocation();
-  const { paths } = useLoader(SVGLoader, url);
-  const shapes = useMemo(
-    () =>
-      paths.flatMap((p) =>
-        p.toShapes(true).map((shape) => ({
-          shape,
-          color: p.color,
-        })),
-      ),
-    [paths],
-  );
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    setViewportSize({
+      width: viewport.clientWidth,
+      height: viewport.clientHeight,
+    });
+    const observer = new ResizeObserver(([entry]) => {
+      setViewportSize({
+        width: entry.contentRect.width,
+        height: entry.contentRect.height,
+      });
+    });
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, []);
 
-  function premiseFloor(): string {
-    if (floor === "1.kerros") {
-      return `/assets/${pathname}/kerros1-rooms.svg`;
-    } else if (floor === "2.kerros") {
-      return `/assets/${pathname}/kerros2-rooms.svg`;
-    } else {
-      return `/assets/${pathname}/kerros3-rooms.svg`;
+  useEffect(() => {
+    if (!inspectedRoom) return;
+    const element = viewportRef.current?.querySelector<SVGPolygonElement>(
+      `[data-room-id="${inspectedRoom._id}"]`,
+    );
+    openerRef.current = element ?? null;
+    element?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [inspectedRoom]);
+
+  function inspect(room: Space) {
+    setMobileRoomsExpanded(false);
+    onSettingsChange(false);
+    onInspect(room);
+  }
+
+  function keyboardOpen(event: KeyboardEvent<SVGPolygonElement>, room: Space) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      inspect(room);
     }
   }
 
-  const ref = useRef<Group>(null!);
+  function changeZoom(next: number) {
+    const viewport = viewportRef.current;
+    const canvas = canvasRef.current;
+    if (!viewport || !canvas) return;
+    const x =
+      (viewport.scrollLeft + viewport.clientWidth / 2 - canvas.offsetLeft) /
+      canvas.clientWidth;
+    const y =
+      (viewport.scrollTop + viewport.clientHeight / 2 - canvas.offsetTop) /
+      canvas.clientHeight;
+    setZoom(next);
+    requestAnimationFrame(() => {
+      viewport.scrollTo({
+        left:
+          next === 1
+            ? 0
+            : canvas.offsetLeft +
+              x * canvas.clientWidth -
+              viewport.clientWidth / 2,
+        top:
+          next === 1
+            ? 0
+            : canvas.offsetTop +
+              y * canvas.clientHeight -
+              viewport.clientHeight / 2,
+      });
+    });
+  }
 
-  useLayoutEffect(() => {
-    const sphere = new Box3()
-      .setFromObject(ref.current!)
-      .getBoundingSphere(new Sphere());
-    ref.current?.position.set(-sphere.center.x, -sphere.center.y, 0);
-  }, []);
+  function startPan(event: PointerEvent<HTMLDivElement>) {
+    if (zoom === 1 || !event.isPrimary || event.button !== 0) return;
+    const viewport = event.currentTarget;
+    panRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      left: viewport.scrollLeft,
+      top: viewport.scrollTop,
+      moved: false,
+    };
+  }
+
+  function movePan(event: PointerEvent<HTMLDivElement>) {
+    const pan = panRef.current;
+    if (!pan || !event.isPrimary) return;
+    const dx = event.clientX - pan.x;
+    const dy = event.clientY - pan.y;
+    if (!pan.moved && Math.hypot(dx, dy) < 5) return;
+    if (!pan.moved) {
+      pan.moved = true;
+      suppressClickRef.current = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setDragging(true);
+    }
+    event.preventDefault();
+    event.currentTarget.scrollLeft = pan.left - dx;
+    event.currentTarget.scrollTop = pan.top - dy;
+  }
+
+  function endPan(event: PointerEvent<HTMLDivElement>) {
+    if (!event.isPrimary) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    panRef.current = null;
+    setDragging(false);
+    window.setTimeout(() => {
+      suppressClickRef.current = false;
+    }, 0);
+  }
 
   return (
-    <group ref={ref} scale={1} rotation={[0, 0, Math.PI / 360]}>
-      {shapes.map((props) => (
-        <Outline key={props.shape.uuid} shape={props.shape} />
-      ))}
-      <Svg url={premiseFloor()} ref={ref} />
-    </group>
-  );
-}
-
-const options = [
-  {
-    value: "varattu",
-    label: "Varattu",
-    icon: CheckCircleIcon,
-  },
-  {
-    value: "vapaa",
-    label: "Vapaa",
-    icon: CircleIcon,
-  },
-  {
-    value: "arto special",
-    label: "Arto Special",
-    icon: TimerIcon,
-  },
-  {
-    value: "canceled",
-    label: "Canceled",
-    icon: XCircleIcon,
-  },
-];
-
-function FilterMe() {
-  const [selectedValues, setSelectedValues] = useState<string[]>([]);
-  const selectedValue = new Set(selectedValues as string[]);
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="mb-4 h-8 border-dashed">
-          <PlusCircleIcon className="mr-2 h-4 w-4" />
-          Filtered by
-          {selectedValue.size > 0 && (
-            <>
-              <Separator orientation="vertical" className="mx-2 h-4" />
-              <Badge
-                variant="secondary"
-                className="rounded-sm px-1 font-normal lg:hidden"
+    <Popover
+      open={Boolean(inspectedRoom)}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <section
+        ref={sectionRef}
+        aria-label="Varauskartta"
+        className="reservation-map-surface relative isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+      >
+        {floor !== null && (
+          <ReservationRoomPanel
+            title={title}
+            address={address}
+            rooms={rooms}
+            query={query}
+            selectedRoomId={selectedRoomId}
+            desktopVisible={desktopRoomsVisible}
+            mobileExpanded={mobileRoomsExpanded}
+            roomDetails={(room) => statusDetails[roomStatus(room)]}
+            onQueryChange={onQueryChange}
+            onSelect={inspect}
+            onHideDesktop={() => {
+              setDesktopRoomsVisible(false);
+              requestAnimationFrame(() =>
+                revealRoomsRef.current?.focus({ preventScroll: true }),
+              );
+            }}
+            onToggleMobile={() => setMobileRoomsExpanded((open) => !open)}
+          />
+        )}
+        <div
+          className={`map-floating-panel @container/map relative z-20 mt-3 max-h-[calc(100%-7rem)] shrink-0 overflow-y-auto overscroll-contain rounded-2xl lg:mt-4 lg:max-h-[calc(100%-6rem)] ${floor === null ? "mx-auto w-[calc(100%-1.5rem)] max-w-3xl lg:w-[calc(100%-2rem)]" : `mx-3 lg:mx-4 ${sidebarOpen ? "lg:ml-88" : ""}`}`}
+        >
+          <div className="flex min-w-0 items-center gap-3 p-3 sm:px-4">
+            <Button asChild variant="ghost" size="icon" className="shrink-0">
+              <Link to="/" aria-label="Takaisin rakennusten kartalle">
+                <ArrowLeft className="h-4 w-4" />
+              </Link>
+            </Button>
+            {floor !== null && !desktopRoomsVisible && (
+              <Button
+                ref={revealRoomsRef}
+                variant="ghost"
+                size="icon"
+                aria-label="Näytä tilalista"
+                onClick={() => {
+                  setDesktopRoomsVisible(true);
+                  requestAnimationFrame(() =>
+                    document
+                      .getElementById("room-search")
+                      ?.focus({ preventScroll: true }),
+                  );
+                }}
+                className="hidden shrink-0 lg:inline-flex"
               >
-                {selectedValue.size}
-              </Badge>
-              <div className="hidden space-x-1 lg:flex">
-                {selectedValue.size > 2 ? (
-                  <Badge
-                    variant="secondary"
-                    className="rounded-sm px-1 font-normal"
-                  >
-                    {selectedValues?.length} selected
-                  </Badge>
-                ) : (
-                  options
-                    .filter((option) => selectedValue.has(option.value))
-                    .map((option) => (
-                      <Badge
-                        variant="secondary"
-                        key={option.value}
-                        className="rounded-sm px-1 font-normal"
-                      >
-                        {option.label}
-                      </Badge>
-                    ))
-                )}
-              </div>
-            </>
-          )}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[200px] p-0" align="start">
-        <Command>
-          <CommandInput placeholder="Filtered by" />
-          <CommandList>
-            <CommandEmpty>No results found.</CommandEmpty>
-            <CommandGroup>
-              {options.map((option) => {
-                const isSelected = selectedValue.has(option.value);
-                return (
-                  <CommandItem
-                    key={option.value}
-                    onSelect={() => {
-                      if (isSelected) {
-                        selectedValue.delete(option.value);
-                      } else {
-                        selectedValue.add(option.value);
-                      }
-                      const filterValues = Array.from(selectedValue);
-                      setSelectedValues(filterValues);
-                      console.log(
-                        filterValues.length ? filterValues : undefined,
-                      );
-                    }}
-                  >
-                    <div
-                      className={cn(
-                        "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
-                        isSelected
-                          ? "bg-primary text-primary-foreground"
-                          : "opacity-50 [&_svg]:invisible",
-                      )}
-                    >
-                      <CheckIcon className={cn("h-4 w-4")} />
-                    </div>
-                    {option.icon && (
-                      <option.icon className="mr-2 h-4 w-4 text-muted-foreground" />
-                    )}
-                    <span>{option.label}</span>
-                    {/* {facets?.get(option.value) && (
-                      <span className="ml-auto flex h-4 w-4 items-center justify-center font-mono text-xs">
-                        {facets.get(option.value)}
-                      </span>
-                    )} */}
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
-            {selectedValues?.length > 0 && (
-              <>
-                <CommandSeparator />
-                <CommandGroup>
-                  <CommandItem
-                    onSelect={() => setSelectedValues([])}
-                    className="justify-center text-center"
-                  >
-                    Clear filters
-                  </CommandItem>
-                </CommandGroup>
-              </>
+                <PanelLeftOpen className="h-5 w-5" />
+              </Button>
             )}
-          </CommandList>
-        </Command>
-      </PopoverContent>
+            <div className="min-w-0 flex-1">
+              <h1
+                className={`truncate text-sm font-semibold ${sidebarOpen ? "lg:hidden" : ""}`}
+              >
+                {title}
+              </h1>
+              <h2
+                className={`${sidebarOpen ? "text-muted-foreground lg:text-foreground text-xs lg:text-sm lg:font-semibold" : "text-muted-foreground text-xs"} truncate`}
+              >
+                {building.name}
+                {floor !== null && ` · ${floor}. kerros`}
+              </h2>
+              {floor !== null && (
+                <p className="text-muted-foreground mt-1 text-xs leading-relaxed tabular-nums">
+                  {selectedInterval(times)
+                    ? showInterval(times)
+                    : "Valitse varausaika"}
+                </p>
+              )}
+              {floor !== null && statusError && !settingsOpen && (
+                <p role="alert" className="text-destructive mt-1 text-xs">
+                  {statusError}
+                </p>
+              )}
+            </div>
+            {floor !== null && (
+              <Button
+                variant="ghost"
+                size="sm"
+                data-map-settings-toggle
+                aria-expanded={settingsOpen}
+                aria-controls="map-settings"
+                onClick={() => onSettingsChange(!settingsOpen)}
+                className="h-auto min-h-10 shrink-0 gap-2 px-2 sm:px-3"
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+                <span className="hidden sm:inline">Aika ja kerros</span>
+                <span className="sr-only sm:hidden">Aika ja kerros</span>
+                <ChevronDown
+                  className={`h-3.5 w-3.5 ${settingsOpen ? "rotate-180" : ""}`}
+                />
+              </Button>
+            )}
+          </div>
+          <div
+            id="map-settings"
+            className={`${controlsVisible ? "block" : "hidden"} border-t p-4`}
+          >
+            {controls}
+          </div>
+        </div>
+        {floor === null ? (
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-6 pb-4 sm:px-7 lg:pb-8">
+            <FloorChooser
+              building={building}
+              floors={floors}
+              onChoose={onFloorSelect}
+            />
+          </div>
+        ) : (
+          <div className="relative min-h-0 flex-1">
+            <div
+              ref={viewportRef}
+              aria-label="Pohjakartan vieritysalue"
+              className={`map-viewport absolute top-4 right-4 bottom-36 left-4 flex overflow-auto overscroll-contain lg:right-6 lg:bottom-20 ${sidebarOpen ? "lg:left-92" : "lg:left-6"} ${canvasHeight <= viewportSize.height ? "items-center" : "items-start"} ${zoom > 1 ? (dragging ? "cursor-grabbing" : "cursor-grab") : ""}`}
+              style={{
+                touchAction: zoom > 1 ? "none" : "auto",
+              }}
+              onPointerDown={startPan}
+              onPointerMove={movePan}
+              onPointerUp={endPan}
+              onPointerCancel={endPan}
+              onClickCapture={(event) => {
+                if (suppressClickRef.current) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }
+              }}
+            >
+              {image ? (
+                <div
+                  ref={canvasRef}
+                  className={`relative shrink-0 ${canvasWidth <= viewportSize.width ? "mx-auto" : ""}`}
+                  style={{ width: fitWidth ? `${canvasWidth}px` : "100%" }}
+                >
+                  <img
+                    src={image}
+                    alt={`${building.name}, ${floor}. kerroksen pohjapiirros`}
+                    onLoad={(event) =>
+                      setImageRatio(
+                        event.currentTarget.naturalWidth /
+                          event.currentTarget.naturalHeight,
+                      )
+                    }
+                    className="block h-auto w-full mix-blend-multiply select-none"
+                    draggable={false}
+                  />
+                  <svg
+                    className="absolute inset-0 h-full w-full"
+                    viewBox="0 0 100 100"
+                    preserveAspectRatio="none"
+                    aria-label="Kartalta valittavat tilat"
+                  >
+                    {mapped.map((room) => {
+                      const details = statusDetails[roomStatus(room)];
+                      const active = inspectedRoom?._id === room._id;
+                      return (
+                        <polygon
+                          key={room._id}
+                          points={room
+                            .mapPolygon!.map((point) => `${point.x},${point.y}`)
+                            .join(" ")}
+                          role="button"
+                          tabIndex={0}
+                          aria-pressed={active}
+                          data-room-id={room._id}
+                          aria-label={`${room.name}: ${details.label.toLocaleLowerCase()}. Näytä tilan tiedot`}
+                          onClick={() => inspect(room)}
+                          onKeyDown={(event) => keyboardOpen(event, room)}
+                          className="cursor-pointer hover:opacity-80 focus:opacity-80 focus:outline-none"
+                          vectorEffect="non-scaling-stroke"
+                          style={{
+                            fill: details.fill,
+                            stroke: details.stroke,
+                            fillOpacity: active ? 0.72 : 0.45,
+                            strokeWidth: active ? 3 : 1.5,
+                          }}
+                        >
+                          <title>
+                            {room.name}: {details.label}
+                          </title>
+                        </polygon>
+                      );
+                    })}
+                  </svg>
+                  {mapped.map((room) => {
+                    const points = room.mapPolygon!;
+                    const minX = Math.min(...points.map((point) => point.x));
+                    const maxX = Math.max(...points.map((point) => point.x));
+                    const minY = Math.min(...points.map((point) => point.y));
+                    const maxY = Math.max(...points.map((point) => point.y));
+                    const labelWidth = ((maxX - minX) * canvasWidth) / 100;
+                    return labelWidth >=
+                      Math.max(90, room.name.length * 6 + 16) ? (
+                      <span
+                        key={room._id}
+                        aria-hidden="true"
+                        className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 truncate rounded bg-white/90 px-2 py-1 text-[11px] font-medium text-slate-800 shadow-sm"
+                        style={{
+                          left: `${(minX + maxX) / 2}%`,
+                          top: `${(minY + maxY) / 2}%`,
+                          maxWidth: labelWidth - 8,
+                        }}
+                      >
+                        {room.name}
+                      </span>
+                    ) : null;
+                  })}
+                  {inspectedRoom && (
+                    <PopoverAnchor asChild>
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute h-px w-px"
+                        style={{ left: `${popupX}%`, top: `${popupY}%` }}
+                      />
+                    </PopoverAnchor>
+                  )}
+                </div>
+              ) : (
+                <p className="text-muted-foreground m-auto p-4 text-center text-sm">
+                  Tälle kerrokselle ei ole pohjapiirrosta. Valitse tila
+                  listasta.
+                </p>
+              )}
+            </div>
+            <div
+              className={`map-floating-panel absolute bottom-24 left-3 z-10 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-3 py-2 text-[11px] lg:bottom-4 ${sidebarOpen ? "lg:left-88" : "lg:left-4"}`}
+              aria-label="Kartan varaustilanteen selite"
+            >
+              {(["available", "reserved", "unavailable"] as const).map(
+                (status) => (
+                  <span key={status} className="flex items-center gap-1.5">
+                    <span
+                      aria-hidden="true"
+                      className={`h-2 w-2 shrink-0 rounded-full ${statusDetails[status].dot}`}
+                    />
+                    {statusDetails[status].label}
+                  </span>
+                ),
+              )}
+            </div>
+            <div className="map-floating-panel absolute right-3 bottom-36 z-10 flex flex-col divide-y overflow-hidden rounded-xl lg:right-4 lg:bottom-4">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Suurenna karttaa"
+                disabled={zoom >= 3}
+                onClick={() => changeZoom(Math.min(3, zoom + 0.5))}
+                className="h-11 w-11 rounded-none"
+              >
+                <ZoomIn className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Pienennä karttaa"
+                disabled={zoom <= 1}
+                onClick={() => changeZoom(Math.max(1, zoom - 0.5))}
+                className="h-11 w-11 rounded-none"
+              >
+                <ZoomOut className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Sovita kartta"
+                disabled={zoom === 1}
+                onClick={() => changeZoom(1)}
+                className="h-11 w-11 rounded-none"
+              >
+                <Maximize2 className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+      </section>
+      {inspectedRoom && inspectedStatus && (
+        <PopoverContent
+          side="top"
+          sideOffset={12}
+          collisionPadding={16}
+          sticky="always"
+          aria-label={`${inspectedRoom.name}, tilan tiedot`}
+          className="max-h-[var(--radix-popover-content-available-height)] w-[min(20rem,calc(100vw-2rem))] overflow-y-auto overscroll-contain rounded-xl p-5 shadow-xl data-[state=closed]:animate-none data-[state=open]:animate-none"
+          onOpenAutoFocus={() => {
+            interactedOutsideRef.current = false;
+          }}
+          onInteractOutside={(event) => {
+            const target = event.detail.originalEvent.target;
+            if (
+              target instanceof Element &&
+              target.closest("[data-room-id], [data-room-select]")
+            )
+              event.preventDefault();
+            else interactedOutsideRef.current = true;
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            if (!interactedOutsideRef.current)
+              openerRef.current?.focus({ preventScroll: true });
+          }}
+        >
+          <div className="mb-4 flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <h3 className="text-base font-semibold break-words">
+                {inspectedRoom.name}
+              </h3>
+              {inspectedRoom.area > 0 && (
+                <p className="text-muted-foreground mt-0.5 text-xs">
+                  {inspectedRoom.area} m²
+                </p>
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Sulje tilan tiedot"
+              className="-mt-2 -mr-2 h-9 w-9 shrink-0"
+              onClick={onClose}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+          <RoomBookingDetails
+            room={inspectedRoom}
+            status={inspectedStatus}
+            times={times}
+            feedback={feedback}
+            loggedIn={loggedIn}
+            returnTo={returnTo}
+            onReserve={onReserve}
+            onEditTime={() => {
+              interactedOutsideRef.current = true;
+              onEditTime();
+            }}
+          />
+        </PopoverContent>
+      )}
     </Popover>
   );
 }
 
-function AddMember() {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [open, setOpen] = React.useState(false);
-  const [inputValue, setInputValue] = useState("");
-  const [selectedValues, setSelectedValues] = useState<typeof options>([]);
-  return (
-    <Command className="overflow-visible bg-transparent">
-      <div className="group rounded-md border border-dashed border-input px-3 py-2 text-sm ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
-        <div className="flex flex-wrap gap-1">
-          {selectedValues.map((option) => (
-            <Badge key={option.value}>
-              {option.label}
-              <button
-                className="ml-1 rounded-full outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-                onClick={() =>
-                  setSelectedValues((prev) =>
-                    prev.filter((s) => s.value !== option.value),
-                  )
-                }
-              >
-                <X className="ml-1 size-[10px]" />
-              </button>
-            </Badge>
-          ))}
-          <CommandPrimitive.Input
-            ref={inputRef}
-            value={inputValue}
-            onValueChange={setInputValue}
-            onBlur={() => setOpen(false)}
-            onFocus={() => setOpen(true)}
-            placeholder="Lisaa jasen..."
-            className="ml-2 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
-          />
-        </div>
-      </div>
-      <div className="relative mt-2">
-        {open &&
-        options.filter((option) => !selectedValues?.includes(option)).length >
-          0 ? (
-          <div className="absolute top-0 z-10 w-full rounded-md border bg-popover text-popover-foreground shadow-md outline-none animate-in">
-            <CommandGroup className="h-full overflow-auto">
-              {options
-                .filter((option) => !selectedValues?.includes(option))
-                .map((member) => (
-                  <CommandItem
-                    key={member.value}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }}
-                    onSelect={() => {
-                      setInputValue("");
-                      setSelectedValues((prev) => [...prev, member]);
-                    }}
-                    className={"cursor-pointer"}
-                  >
-                    {member.label}
-                  </CommandItem>
-                ))}
-            </CommandGroup>
-          </div>
-        ) : null}
-      </div>
-    </Command>
-  );
-}
-
-function ReservationDialog({
-  children,
-  availabilityId,
-}: {
-  children: React.ReactNode;
-  availabilityId: string;
-}) {
-  const user = useTypedSelector((state) => state.user.currentUser);
-  const { createReservation } = useReservationAction();
-  const [startDate, setStartDate] = useState<Date>();
-  const [endDate, setEndDate] = useState<Date>();
-  const [start, setStart] = useState<string>();
-  const [end, setEnd] = useState<string>();
-  console.log("me", user._id);
-  console.log("avalability", availabilityId);
-  return (
-    <Dialog>
-      <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="sm:max-w-[578px]">
-        <DialogHeader>
-          <DialogTitle>A1234</DialogTitle>
-          <DialogDescription>
-            Kolmikerrosinen koulu rakennus, jossa on noin 150 opetustilaa
-          </DialogDescription>
-          <div className="flex gap-4">
-            <div className="flex items-center gap-1 text-sm">
-              <Users className="" />
-              10 / 100
-            </div>
-            <div>
-              <Coffee />
-            </div>
-          </div>
-        </DialogHeader>
-        <div className="grid gap-4 py-4">
-          <div className="flex flex-col gap-4">
-            <Label htmlFor="name" className="">
-              Otsikko
-            </Label>
-            <Input id="name" placeholder="Yrittajyys kurssi" className="" />
-          </div>
-          <div className="flex flex-col gap-4">
-            <Label htmlFor="add-user" className="">
-              Lisaa jasen
-            </Label>
-            <AddMember />
-          </div>
-          <div className="flex flex-col gap-4">
-            <Label htmlFor="member-count" className="">
-              Ryhman koko
-            </Label>
-            <Input id="member-count" placeholder="10" className="" />
-          </div>
-          <div className="flex items-end gap-4">
-            <div className="flex w-full flex-1 flex-col gap-4">
-              <Label htmlFor="add-user" className="">
-                Aloitus
-              </Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant={"outline"}
-                    className={cn(
-                      "w-full flex-1 justify-start text-left font-normal",
-                      !startDate && "text-muted-foreground",
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {startDate ? (
-                      format(startDate, "PPP", { locale: fi })
-                    ) : (
-                      <span>Valitse päivämäärä</span>
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={startDate}
-                    onSelect={setStartDate}
-                    initialFocus
-                    locale={fi}
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-            <Select
-              // value={start}
-              onValueChange={setStart}
-            >
-              <SelectTrigger className="w-full flex-1">
-                <SelectValue placeholder="Valitse aloitusaika" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectLabel>Aloitusaika</SelectLabel>
-                  <SelectItem value="12:00">12:00</SelectItem>
-                  <SelectItem value="12:45">12:45</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-end gap-4">
-            <div className="flex w-full flex-1 flex-col gap-4">
-              <Label htmlFor="add-user" className="">
-                Lopetus
-              </Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant={"outline"}
-                    className={cn(
-                      "w-full justify-start text-left font-normal",
-                      !endDate && "text-muted-foreground",
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {endDate ? (
-                      format(endDate, "PP", { locale: fi })
-                    ) : (
-                      <span className="w-full">Valitse päivämäärä</span>
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={endDate}
-                    onSelect={setEndDate}
-                    initialFocus
-                    locale={fi}
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-            <Select
-              // value={start}
-              onValueChange={setEnd}
-            >
-              <SelectTrigger className="w-full flex-1">
-                <SelectValue placeholder="Valitse aloitusaika" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectLabel>Lopetusaika</SelectLabel>
-                  <SelectItem value="13:00">13:00</SelectItem>
-                  <SelectItem value="13:45">13:45</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex w-full flex-1 flex-col gap-4">
-            <Label htmlFor="add-user" className="">
-              Toituva
-            </Label>
-            <Select
-              // value={start}
-              onValueChange={setEnd}
-            >
-              <SelectTrigger className="w-full flex-1">
-                <SelectValue placeholder="Valitse Toistuva" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectLabel>Toistuva</SelectLabel>
-                  <SelectItem value="everyday">Joka paiva</SelectItem>
-                  <SelectItem value="every-week">Joka viikko</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex w-full flex-1 flex-col gap-4">
-            <Label htmlFor="add-user" className="">
-              Lisatietoa
-            </Label>
-            <Textarea placeholder="Kirjoita viesti" />
-          </div>
-        </div>
-        <DialogFooter className="sm:justify-start">
-          <Button
-            type="submit"
-            onClick={() => {
-              createReservation(startDate!, endDate!, availabilityId);
-              console.log("max win");
-            }}
-          >
-            Varaa Tila
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-const premiseSchema = z.object({
-  buildingName: z.string(),
-  floorName: z.string().optional(),
-  roomName: z.string().optional(),
-  dateTime: z.date().optional(),
-  startTime: z.string().optional(),
-  endTime: z.string().optional(),
-});
-
-function PremiseFilter() {
+export function Premise() {
   const { id } = useParams();
-  const { pathname } = useLocation();
+  const location = useLocation();
+  const routeState = location.state as {
+    times?: Times;
+    roomId?: string;
+    buildingId?: string;
+    floor?: number;
+  } | null;
   const { getPremiseById } = usePremiseAction();
-  const { premiseData, currentBuilding } = useTypedSelector(
+  const { premiseData, isLoading, alertText } = useTypedSelector(
     (state) => state.premise,
   );
-  let [buildingId, setBuildingId] = useState<string | undefined>(undefined);
-  const [floor, setFloor] = useState<string | undefined>(undefined);
-
-  const form = useForm<z.infer<typeof premiseSchema>>({
-    resolver: zodResolver(premiseSchema),
+  const [buildingId, setBuildingId] = useState(routeState?.buildingId ?? "");
+  const [floor, setFloor] = useState<number | null>(routeState?.floor ?? null);
+  const [query, setQuery] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(
+    routeState?.roomId ?? null,
+  );
+  const [bookingFeedback, setBookingFeedback] =
+    useState<BookingFeedback | null>(null);
+  const [times, setTimesValue] = useState<Times>(() => {
+    const restored = routeState?.times;
+    return restored &&
+      typeof restored.start === "string" &&
+      typeof restored.end === "string" &&
+      selectedInterval(restored)
+      ? restored
+      : defaultTimes();
   });
+  const [statusRevision, setStatusRevision] = useState(0);
+  const [statusResponse, setStatusResponse] = useState<{
+    key: string;
+    schedules: Availability[];
+    error: string;
+  }>({
+    key: "",
+    schedules: [],
+    error: "",
+  });
+  const mapRef = useRef<HTMLElement>(null);
+  const timeRef = useRef<HTMLInputElement>(null);
+  const building =
+    premiseData.buildings.find((item) => item._id === buildingId) ??
+    premiseData.buildings[0];
+  const selectedRoom =
+    premiseData.buildings
+      .flatMap((item) => item.space)
+      .find((room) => room._id === selectedRoomId) ?? null;
+  const floors = Array.from(
+    { length: building?.floors ?? 0 },
+    (_, index) => index + 1,
+  );
+  const activeFloor =
+    floor !== null && floors.includes(floor)
+      ? floor
+      : floors.length === 1
+        ? floors[0]
+        : null;
+  const rooms =
+    building?.space.filter(
+      (room) =>
+        room.floor === activeFloor &&
+        room.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
+    ) ?? [];
+  const interval = selectedInterval(times);
+  const statusKey = `${id}:${times.start}:${times.end}:${statusRevision}`;
+  const statusError =
+    statusResponse.key === statusKey ? statusResponse.error : "";
+  const loggedIn = Boolean(new Cookies().get("tilatikkiToken"));
+  const selectedOnMap =
+    selectedRoom &&
+    selectedRoom.mapPolygon &&
+    selectedRoom.mapPolygon.length >= 3 &&
+    selectedRoom.building === building?._id &&
+    selectedRoom.floor === activeFloor &&
+    building?.blueprint.some((item) => item.floor === selectedRoom.floor);
 
-  // function premiseOutline(): string {
-  //   if (floor) {
-  //     console.log("floor", floor);
-  //     console.log(
-  //       `/assets/${formatPremiseNameForUrl(premiseData.name)}/kerros${floor}-outline.svg`,
-  //     );
-  //     return `/assets/${formatPremiseNameForUrl(premiseData.name)}/kerros${floor}-outline.svg`;
-  //   } else {
-  //     // Default outline if no floor is selected
-  //     return `/assets/${pathname}/default-outline.svg`;
-  //   }
-  // }
+  const setTimes: Dispatch<SetStateAction<Times>> = (next) => {
+    setTimesValue(next);
+    setStatusRevision((previous) => previous + 1);
+    setBookingFeedback(null);
+  };
 
-  function onSubmit(data: z.infer<typeof premiseSchema>) {
-    console.log(data);
-    const selectedBuilding = premiseData.buildings.find(
-      (building) => building.name === data.buildingName,
+  function changeStart(value: string) {
+    setTimes((previous) => {
+      const nextStart = new Date(value);
+      const end = new Date(previous.end);
+      const oldStart = new Date(previous.start);
+      if (!Number.isFinite(nextStart.getTime())) {
+        return { ...previous, start: value };
+      }
+      const previousDuration = end.getTime() - oldStart.getTime();
+      const duration =
+        Number.isFinite(previousDuration) && previousDuration > 0
+          ? previousDuration
+          : 60 * 60 * 1000;
+      return {
+        start: value,
+        end: localInput(new Date(nextStart.getTime() + duration)),
+      };
+    });
+  }
+
+  function inspectRoom(room: Space) {
+    setSelectedRoomId(room._id);
+    setBookingFeedback(null);
+  }
+
+  function changeFloor(nextFloor: number | null) {
+    setFloor(nextFloor);
+    setQuery("");
+    setSelectedRoomId(null);
+    setBookingFeedback(null);
+    setSettingsOpen(false);
+    requestAnimationFrame(() => {
+      mapRef.current
+        ?.querySelector<HTMLElement>(
+          nextFloor === null ? "select#floor" : "[data-map-settings-toggle]",
+        )
+        ?.focus({ preventScroll: true });
+    });
+  }
+
+  function editTime() {
+    setSelectedRoomId(null);
+    setSettingsOpen(true);
+    requestAnimationFrame(() =>
+      timeRef.current?.focus({ preventScroll: true }),
     );
-    // force buildingid state change
-    buildingId = selectedBuilding?._id;
-    // setBuildingId(buildingId);
+  }
 
-    setFloor(data.floorName);
-    const floorNumber = data.floorName ? parseInt(floor!, 10) : undefined;
+  useEffect(() => {
+    if (id) getPremiseById(id);
+  }, [getPremiseById, id]);
 
-    // Ensure floorNumber is a number and not NaN before calling getPremiseById
-    if (buildingId && floorNumber !== undefined && !isNaN(floorNumber)) {
-      getPremiseById(id!, buildingId, floorNumber);
+  useEffect(() => {
+    const refresh = () => {
+      setStatusRevision((previous) => previous + 1);
+      setBookingFeedback(null);
+    };
+    window.addEventListener(reservationsChangedEvent, refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.removeEventListener(reservationsChangedEvent, refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, []);
+
+  useEffect(() => {
+    const selected = selectedInterval(times);
+    if (!id || !selected) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      fetch(`/api/availability/premise/${id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          startdate: selected.start.toISOString(),
+          enddate: selected.end.toISOString(),
+        }),
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          const data = await response.json();
+          if (!response.ok)
+            throw new Error(data.error || "Varaustilannetta ei voitu hakea.");
+          setStatusResponse({ key: statusKey, schedules: data, error: "" });
+        })
+        .catch((reason: Error) => {
+          if (reason.name !== "AbortError") {
+            setStatusResponse({
+              key: statusKey,
+              schedules: [],
+              error: reason.message,
+            });
+          }
+        });
+    }, 200);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [id, times, statusRevision, statusKey]);
+
+  function roomStatus(room: Space): DisplayStatus {
+    if (!interval) return "invalid";
+    if (statusResponse.key !== statusKey) return "loading";
+    if (statusError) return "error";
+    return getRoomStatus(
+      room._id,
+      statusResponse.schedules,
+      interval.start,
+      interval.end,
+    );
+  }
+
+  async function reserveRoom(room: Space) {
+    const selected = selectedInterval(times);
+    const available =
+      selected &&
+      statusResponse.key === statusKey &&
+      roomStatus(room) === "available"
+        ? statusResponse.schedules.find(
+            (item) =>
+              item.space === room._id &&
+              new Date(item.startdate) <= selected.start &&
+              selected.end <= new Date(item.enddate),
+          )
+        : null;
+    if (!selected || !available) {
+      setBookingFeedback({
+        roomId: room._id,
+        kind: "error",
+        message: "Tarkista aika ja tilan varaustilanne uudelleen.",
+      });
+      return;
     }
-    if (id && buildingId) {
-      // Call without floorNumber if buildingId is set but floorNumber is not a valid number
-      getPremiseById(id, buildingId);
+    const token = new Cookies().get("tilatikkiToken");
+    if (!token) {
+      setBookingFeedback({ roomId: room._id, kind: "login" });
+      return;
     }
-    form.reset();
+    setBookingFeedback({ roomId: room._id, kind: "saving" });
+    try {
+      const response = await fetch("/api/reservation", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          startdate: selected.start.toISOString(),
+          enddate: selected.end.toISOString(),
+          availabilityId: available._id,
+        }),
+      });
+      const data = await response.json();
+      if (response.status === 401) {
+        setBookingFeedback({ roomId: room._id, kind: "login" });
+        return;
+      }
+      if (!response.ok) {
+        if (response.status === 409)
+          setStatusRevision((previous) => previous + 1);
+        throw new Error(
+          response.status === 409
+            ? "Tila ehdittiin varata. Valitse toinen aika."
+            : data.error || "Varaus epäonnistui.",
+        );
+      }
+      setBookingFeedback({ roomId: room._id, kind: "success" });
+      setStatusRevision((previous) => previous + 1);
+    } catch (reason) {
+      setBookingFeedback({
+        roomId: room._id,
+        kind: "error",
+        message:
+          reason instanceof Error ? reason.message : "Varaus epäonnistui.",
+      });
+    }
   }
 
   return (
-    <ResizablePanel>
-      <div className="h-full w-full">
-        {/* <Card className="col-span-1 row-span-3 sm:col-span-3 sm:row-span-1"> */}
-        <CardHeader>
-          <CardTitle>{premiseData.name}</CardTitle>
-          <CardDescription>
-            Kolmikerrosinen koulu rakennus, jossa on noin 150 opetustilaa
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <FilterMe />
-          <Form {...form}>
-            <form
-              onSubmit={form.handleSubmit(onSubmit)}
-              className="flex flex-col items-start gap-5"
-            >
-              <div className="flex gap-3">
-                <FormField
-                  control={form.control}
-                  name="buildingName"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-col">
-                      <FormLabel>Rakennus</FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        defaultValue={field.value}
-                      >
-                        <FormControl>
-                          <SelectTrigger className="w-[180px]">
-                            <SelectValue placeholder="Valitse Rakennus" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectGroup>
-                            <SelectLabel>Rakennus</SelectLabel>
-                            {premiseData.buildings.map((building, index) => (
-                              <SelectItem key={index} value={building.name}>
-                                {building.name}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                      <FormDescription>Opetustila mmm...</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="floorName"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-col">
-                      <FormLabel>Kerros</FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        value={field.value}
-                      >
-                        <FormControl>
-                          <SelectTrigger className="w-[180px]">
-                            <SelectValue placeholder="Valitse Kerros" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectGroup>
-                            <SelectLabel>Kerros</SelectLabel>
-                            {currentBuilding ? (
-                              Array.from(
-                                { length: currentBuilding.floors },
-                                (_, i) => (
-                                  <SelectItem key={i} value={String(i + 1)}>
-                                    {i + 1}
-                                  </SelectItem>
-                                ),
-                              )
-                            ) : (
-                              <p
-                                aria-disabled
-                                className="relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
-                              >
-                                No floors available
-                              </p>
-                            )}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                      <FormDescription>Opetustila mmm...</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-              <FormField
-                control={form.control}
-                name="roomName"
-                render={({ field }) => (
-                  <FormItem className="flex flex-col">
-                    <FormLabel>Opetustila</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger className="w-[180px]">
-                          <SelectValue placeholder="Valitse Opetustila" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectLabel>Opetustilat</SelectLabel>
-                          {currentBuilding && currentBuilding.space ? (
-                            currentBuilding.space.map((space, index) => (
-                              <SelectItem key={index} value={space.name}>
-                                {space.name}
-                              </SelectItem>
-                            ))
-                          ) : (
-                            <div
-                              aria-disabled
-                              className="relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
-                            >
-                              Ei ole tiloja saatavilla
-                            </div>
-                          )}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>Opetustila mmm...</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="dateTime"
-                render={({ field }) => (
-                  <FormItem className="flex flex-col">
-                    <FormLabel>Päivämäärä</FormLabel>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant={"outline"}
-                            className={cn(
-                              "w-[280px] justify-start text-left font-normal",
-                              !field.value && "text-muted-foreground",
-                            )}
-                          >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {field.value ? (
-                              format(field.value, "PP", { locale: fi })
-                            ) : (
-                              <span>Valitse päivämäärä</span>
-                            )}
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <Calendar
-                          mode="single"
-                          selected={field.value}
-                          onSelect={field.onChange}
-                          initialFocus
-                          locale={fi}
-                        />
-                      </PopoverContent>
-                    </Popover>
-                    <FormDescription>Päivämäärä...</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <div className="flex gap-2">
-                <FormField
-                  control={form.control}
-                  name="startTime"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-col">
-                      <FormLabel>Aloitusaika</FormLabel>
-                      <Select
-                        value={field.value}
-                        onValueChange={field.onChange}
-                      >
-                        <FormControl>
-                          <SelectTrigger className="w-32">
-                            <SelectValue placeholder="Valitse Aloitusaika" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectGroup>
-                            <SelectLabel>Aloitus</SelectLabel>
-                            <SelectItem value="13:00">13:00</SelectItem>
-                            <SelectItem value="15:00">15:00</SelectItem>
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                      <FormDescription>Aloitusaika...</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="endTime"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-col">
-                      <FormLabel>Lopetusaika</FormLabel>
-                      <Select
-                        value={field.value}
-                        onValueChange={field.onChange}
-                      >
-                        <FormControl>
-                          <SelectTrigger className="w-32">
-                            <SelectValue placeholder="Valitse Lopetusaika" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectGroup>
-                            <SelectLabel>Lopetus</SelectLabel>
-                            <SelectItem value="14:00">14:00</SelectItem>
-                            <SelectItem value="16:00">16:00</SelectItem>
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                      <FormDescription>Lopetusaika...</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-              <Button type="submit">Hae Tilat</Button>
-            </form>
-          </Form>
-        </CardContent>
-      </div>
-    </ResizablePanel>
-  );
-}
-
-function formatPremiseNameForUrl(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/ä/g, "a")
-    .replace(/ö/g, "o")
-    .replace(/\s+/g, "-")
-    .replace(/[^\w-]+/g, "");
-}
-
-export function Premise() {
-  const { id } = useParams();
-  const { pathname } = useLocation();
-  const { getPremiseById } = usePremiseAction();
-  const { isLoading, premiseData, currentBuilding } = useTypedSelector(
-    (state) => state.premise,
-  );
-
-  useEffect(() => {
-    if (id) {
-      getPremiseById(id);
-    }
-  }, []);
-
-  // const watchedBuildingName = form.watch("buildingName");
-  // const watchedFloor = form.watch("floorName");
-
-  // useEffect(() => {
-  //   if (!watchedBuildingName) {
-  //     setBuildingId(undefined);
-  //     return;
-  //   }
-
-  //   const selectedBuilding = premiseData.buildings.find(
-  //     (building) => building.name === watchedBuildingName,
-  //   );
-
-  //   if (selectedBuilding) {
-  //     setBuildingId(selectedBuilding._id);
-  //   } else {
-  //     setBuildingId(undefined);
-  //   }
-  // }, [watchedBuildingName, premiseData.buildings]);
-
-  // useEffect(() => {
-  //   if (!watchedFloor) {
-  //     setFloor(undefined);
-  //     return;
-  //   }
-  //   setFloor(watchedFloor);
-  // }, [watchedFloor]);
-
-  // useEffect(() => {
-  //   let floorNumber: number | undefined;
-  //   if (!watchedFloor) {
-  //     floorNumber = undefined;
-  //   } else {
-  //     floorNumber = parseInt(watchedFloor, 10);
-  //   }
-  //   // Ensure floorNumber is a number and not NaN before calling getPremiseById
-  //   if (buildingId && floorNumber !== undefined && !isNaN(floorNumber)) {
-  //     getPremiseById(id!, buildingId, floorNumber);
-  //   } else if (buildingId) {
-  //     // Call without floorNumber if buildingId is set but floorNumber is not a valid number
-  //     getPremiseById(id!, buildingId);
-  //   }
-  // }, [buildingId, watchedFloor]);
-
-  // function premiseOutline(): string {
-  //   if (floor === "1") {
-  //     return `/assets/${pathname}/kerros1-outline.svg`;
-  //   } else if (floor === "2") {
-  //     return `/assets/${pathname}/kerros2-outline.svg`;
-  //   } else {
-  //     return `/assets/${pathname}/kerros3-outline.svg`;
-  //   }
-  // }
-
-  // function premiseFloor(): string {
-  //   if (floor === "1.kerros") {
-  //     return `/assets/${pathname}/kerros1.svg`;
-  //   } else if (floor === "2.kerros") {
-  //     return `/assets/${pathname}/kerros2.svg`;
-  //   } else {
-  //     return `/assets/${pathname}/kerros3-rooms.svg`;
-  //   }
-  // }
-
-  console.log("currentbuildings", currentBuilding?.space);
-
-  // if (isLoading) return <div>Loading...</div>;
-
-  return (
-    <main className="flex flex-1 flex-col p-4 sm:min-h-0 sm:px-8 sm:py-4">
-      {/* <div className="grid flex-1 grid-cols-1 grid-rows-3 gap-4 p-4 sm:min-h-0 sm:grid-cols-10 sm:grid-rows-1 sm:gap-8 sm:px-8 sm:py-4"> */}
-      <ResizablePanelGroup
-        direction="horizontal"
-        className="h-full w-full rounded-lg border"
-      >
-        <PremiseFilter />
-        <ResizableHandle withHandle />
-        <ResizablePanel>
-          <div className="flex h-full w-full flex-col gap-6 p-6">
-            <Input placeholder="search..." />
-            <Suspense fallback={<Loader2 className="animate-spin" />}>
-              {currentBuilding && currentBuilding.space.length >= 1 ? (
-                isLoading ? (
-                  <Loader2 className="animate-spin" />
-                ) : (
-                  currentBuilding?.space.map((space, index) => (
-                    <ReservationDialog
-                      key={index}
-                      availabilityId={space.availabilities[0]}
-                    >
-                      <Card>
-                        <CardHeader>
-                          <CardTitle>{space.name}</CardTitle>
-                        </CardHeader>
-                        <CardContent className="flex gap-2">
-                          <Badge>{`${space.area} m\u00b2`}</Badge>
-                          {/* Additional badges or info based on space details */}
-                        </CardContent>
-                      </Card>
-                    </ReservationDialog>
-                  ))
-                )
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Ei ole tiloja saatavilla
-                </p>
-              )}
-            </Suspense>
-          </div>
-        </ResizablePanel>
-        <ResizableHandle withHandle />
-        <ResizablePanel>
-          <Tabs
-            defaultValue="1floor"
-            className="flex h-full w-full flex-col items-start"
+    <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {alertText && !isLoading && (
+        <p role="alert" className="text-destructive shrink-0 px-4 py-2 text-sm">
+          {alertText}
+        </p>
+      )}
+      {isLoading && <p className="p-6">Tilat ladataan...</p>}
+      {building && (
+        <FloorMap
+          key={`${building._id}-${activeFloor}`}
+          building={building}
+          floor={activeFloor}
+          floors={floors}
+          title={premiseData.name || "Tilat"}
+          address={premiseData.address}
+          rooms={rooms}
+          query={query}
+          onQueryChange={setQuery}
+          selectedRoomId={selectedRoomId}
+          settingsOpen={settingsOpen}
+          onSettingsChange={setSettingsOpen}
+          controls={
+            <ReservationMapControls
+              buildings={premiseData.buildings}
+              buildingId={building._id}
+              floor={activeFloor}
+              floors={floors}
+              times={times}
+              timeRef={timeRef}
+              intervalValid={Boolean(interval)}
+              statusError={statusError}
+              onBuildingChange={(nextBuilding) => {
+                setBuildingId(nextBuilding);
+                changeFloor(null);
+              }}
+              onFloorChange={changeFloor}
+              onStartChange={changeStart}
+              onEndChange={(value) =>
+                setTimes((previous) => ({ ...previous, end: value }))
+              }
+            />
+          }
+          times={times}
+          statusError={statusError}
+          roomStatus={roomStatus}
+          inspectedRoom={selectedOnMap ? selectedRoom : null}
+          feedback={bookingFeedback}
+          loggedIn={loggedIn}
+          returnTo={location.pathname}
+          sectionRef={mapRef}
+          onFloorSelect={changeFloor}
+          onInspect={inspectRoom}
+          onClose={() => setSelectedRoomId(null)}
+          onReserve={(room) => void reserveRoom(room)}
+          onEditTime={() => editTime()}
+        />
+      )}
+      {selectedRoom &&
+        selectedRoom.building === building?._id &&
+        selectedRoom.floor === activeFloor &&
+        !selectedOnMap && (
+          <Dialog
+            open
+            onOpenChange={(open) => {
+              if (!open) setSelectedRoomId(null);
+            }}
           >
-            <TabsList className="flex items-start">
-              <TabsTrigger value="1floor">1.kerros</TabsTrigger>
-              <TabsTrigger value="2floor">2.kerros</TabsTrigger>
-            </TabsList>
-            <TabsContent
-              value="1floor"
-              id="ref-body"
-              className="h-full w-full flex-1"
-            >
-              <Canvas
-                className="h-full w-full"
-                frameloop="demand"
-                orthographic
-                camera={{
-                  position: [0, 0, 200],
-                  zoom: 1,
-                  up: [0, 0, 1],
-                  far: 10000,
-                }}
-              >
-                <Suspense fallback={<Loader />}>
-                  {/*  <BackgroundLayer
-                    url={premiseOutline()}
-                    floor={floor || "defaultFloor"}
-                  />*/}
-                </Suspense>
-                <MapControls enableRotate={false} />
-              </Canvas>
-            </TabsContent>
-            <TabsContent value="2floor">
-              <p>hmmm kauppa</p>
-            </TabsContent>
-          </Tabs>
-        </ResizablePanel>
-      </ResizablePanelGroup>
+            <DialogContent className="sm:max-w-sm">
+              <DialogHeader>
+                <DialogTitle>{selectedRoom.name}</DialogTitle>
+              </DialogHeader>
+              <RoomBookingDetails
+                room={selectedRoom}
+                status={roomStatus(selectedRoom)}
+                times={times}
+                feedback={bookingFeedback}
+                loggedIn={loggedIn}
+                returnTo={location.pathname}
+                onReserve={(room) => void reserveRoom(room)}
+                onEditTime={editTime}
+              />
+            </DialogContent>
+          </Dialog>
+        )}
     </main>
   );
 }

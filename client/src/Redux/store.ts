@@ -1,21 +1,17 @@
 import {
   legacy_createStore as createStore,
   applyMiddleware,
-  compose,
 } from "redux";
 import { thunk } from "redux-thunk";
-import logger from "redux-logger";
 import { rootReducer } from "./Reducers/rootReducer";
 
 // Create an array of middleware, including thunk.
-const middleware = [thunk, logger];
-// TODO: fix this error
-const composeEnhancers = window.__REDUX_DEVTOOLS_EXTENSION_COMPOSE__ || compose;
-
+const middleware = [thunk];
 // Create the Redux store.
 export const store = createStore(
   rootReducer,
-  composeEnhancers(applyMiddleware(...middleware)),
+  undefined,
+  applyMiddleware(...middleware),
 );
 
 // Export all the action creators from the `premiseReducer` file as a named export called `actionCreators`.

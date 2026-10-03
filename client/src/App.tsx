@@ -15,7 +15,6 @@ import { Header } from "~/@/components/Header";
 import { store } from "~/Redux/store";
 import { AuthChecker } from "~/utils/AutoChecker";
 import { Profile } from "./pages/Settings";
-import { Loader2 } from "lucide-react";
 
 const router = createBrowserRouter([
   {
@@ -54,23 +53,29 @@ const router = createBrowserRouter([
 function Layout() {
   const navigation = useNavigation();
   const { pathname } = useLocation();
+  const isReservationMap =
+    pathname === "/" || /^\/premises\/[^/]+\/?$/.test(pathname);
   return (
     <>
       {pathname === "/login" || pathname === "/register" ? (
         <Outlet />
       ) : (
-        <div className="relative flex h-screen w-screen flex-col">
+        <div
+          className={`bg-muted/30 relative flex w-full min-w-0 flex-col ${isReservationMap ? "h-dvh overflow-hidden" : "min-h-dvh"}`}
+        >
           <Header />
           {navigation.state !== "idle" && <p>Navigation in progress...</p>}
           <Outlet />
-          <footer className="flex p-4 sm:px-8">
-            <span>
-              Created by &hearts;{" "}
-              <a href="/" className="font-bold">
-                Virittämö
-              </a>
-            </span>
-          </footer>
+          {!isReservationMap && (
+            <footer className="text-muted-foreground mx-auto flex w-full max-w-[1440px] shrink-0 px-4 py-4 text-xs sm:px-6 lg:px-8">
+              <span>
+                Created by &hearts;{" "}
+                <a href="/" className="font-bold">
+                  Virittämö
+                </a>
+              </span>
+            </footer>
+          )}
         </div>
       )}
     </>
@@ -81,10 +86,7 @@ export default function App() {
   return (
     <Provider store={store}>
       <AuthChecker />
-      <RouterProvider
-        router={router}
-        fallbackElement={<Loader2 className="animate-spin" />}
-      />
+      <RouterProvider router={router} />
     </Provider>
   );
 }

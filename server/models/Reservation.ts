@@ -1,17 +1,13 @@
-import { Document, Schema, Model, model } from "mongoose";
-import { type IUser } from "./User.js";
-import { type IPremise } from "./Premise.js";
-import { type ISpace } from "./Space.js";
-import { type IAvailability } from "./Availability.js";
+import { Document, Schema, Types, Model, model } from "mongoose";
 
 // For internal model definition only.
 export interface IReservation extends Document {
-  creator: Schema.Types.ObjectId | IUser;
+  creator: Types.ObjectId;
   startdate: Date;
   enddate: Date;
-  premise: Schema.Types.ObjectId | IPremise;
-  space: Schema.Types.ObjectId | ISpace;
-  availability: Schema.Types.ObjectId | IAvailability;
+  premise: Types.ObjectId;
+  space: Types.ObjectId;
+  availability: Types.ObjectId;
 }
 
 // Typeguard to check if the value is of type IReservation[].

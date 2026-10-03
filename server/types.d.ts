@@ -1,12 +1,12 @@
-import { Response as ExpressResponse } from 'express';
+import "express-serve-static-core";
 
 declare module 'express-serve-static-core' {
   interface Response {
     advancedResults?: {
       success: boolean;
       count: number;
-      pagination?: any;
-      data: any[];
+      pagination?: unknown;
+      data: unknown[];
     };
   }
 }
