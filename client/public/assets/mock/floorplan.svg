@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500">
+  <rect x="0" y="0" width="800" height="500" fill="white"/>
+  <g fill="#f1f5f3" stroke="#64746c" stroke-width="3">
+    <rect x="40" y="50" width="320" height="150"/>
+    <rect x="440" y="50" width="320" height="150"/>
+    <rect x="40" y="300" width="320" height="150"/>
+    <rect x="440" y="300" width="320" height="150"/>
+  </g>
+  <path d="M40 250H760M400 50V450" stroke="#d7dfda" stroke-width="2" stroke-dasharray="6 6"/>
+  <g fill="#fff" stroke="#64746c" stroke-width="2">
+    <path d="M280 200h48v-48a48 48 0 0 0-48 48M472 200h48a48 48 0 0 0-48-48v48M280 300h48v48a48 48 0 0 1-48-48M472 300h48a48 48 0 0 1-48 48v-48"/>
+  </g>
+  <text x="400" y="485" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#64746c">Mock-pohjapiirros</text>
+</svg>

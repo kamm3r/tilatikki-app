@@ -20,7 +20,9 @@ npm run seed:demo
 npm run dev
 ```
 
-Open [http://localhost:5050](http://localhost:5050). Search for `Pakila`, `Halkosuontie`, or `B204`, or select the building marker. Building results open the floor chooser; room results open that room's booking popup. Sign in with `demo.user@edu.hel.fi` / `DemoPassword1!`. The demo seed is safe to run again: it updates the same local premise, 16 mapped rooms across two floors, floor plans, and availability windows. It refuses nonlocal MongoDB connections.
+Open [http://localhost:5050](http://localhost:5050). Search for `Pakila`, `Halkosuontie`, or `B204`, or select the building marker. Building results open the first floor with tabs for switching floors; room results open that room's booking popup. Sign in with `demo.user@edu.hel.fi` / `DemoPassword1!`. The demo seed is safe to run again: it updates the same local premise, the Pakila demo and two clearly labeled mock locations, floor plans, and availability windows. It refuses nonlocal MongoDB connections.
+
+The extra mock locations are **Keskustan työtila** (two floors, eight rooms) and **Kallion kokoustalo** (three floors, twelve rooms). Their addresses, locations, and layouts are fictional. The demo user can book rooms at all three locations. Rerunning the seed preserves existing bookings and availability windows.
 
 ## Geographic map prototype
 

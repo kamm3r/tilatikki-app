@@ -34,7 +34,7 @@ import {
   PopoverAnchor,
   PopoverContent,
 } from "~/@/components/ui/popover";
-import { FloorChooser } from "~/@/components/FloorChooser";
+import { FloorTabs } from "~/@/components/FloorTabs";
 import { ReservationRoomPanel } from "~/@/components/ReservationRoomPanel";
 import { ReservationMapControls } from "~/@/components/ReservationMapControls";
 import { usePremiseAction } from "~/hooks/usePremise";
@@ -551,14 +551,17 @@ function FloorMap({
                 className="h-auto min-h-10 shrink-0 gap-2 px-2 sm:px-3"
               >
                 <SlidersHorizontal className="h-4 w-4" />
-                <span className="hidden sm:inline">Aika ja kerros</span>
-                <span className="sr-only sm:hidden">Aika ja kerros</span>
+                <span className="hidden sm:inline">Varausaika</span>
+                <span className="sr-only sm:hidden">Varausaika</span>
                 <ChevronDown
                   className={`h-3.5 w-3.5 ${settingsOpen ? "rotate-180" : ""}`}
                 />
               </Button>
             )}
           </div>
+          {floor !== null && (
+            <FloorTabs floors={floors} floor={floor} onSelect={onFloorSelect} />
+          )}
           <div
             id="map-settings"
             className={`${controlsVisible ? "block" : "hidden"} border-t p-4`}
@@ -567,15 +570,16 @@ function FloorMap({
           </div>
         </div>
         {floor === null ? (
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-6 pb-4 sm:px-7 lg:pb-8">
-            <FloorChooser
-              building={building}
-              floors={floors}
-              onChoose={onFloorSelect}
-            />
-          </div>
+          <p className="text-muted-foreground p-6 text-sm">
+            Rakennukselle ei ole lisätty kerroksia.
+          </p>
         ) : (
-          <div className="relative min-h-0 flex-1">
+          <div
+            id="floor-map-panel"
+            role="tabpanel"
+            aria-labelledby={`floor-tab-${floor}`}
+            className="relative min-h-0 flex-1"
+          >
             <div
               ref={viewportRef}
               aria-label="Pohjakartan vieritysalue"
@@ -862,11 +866,7 @@ export function Premise() {
     (_, index) => index + 1,
   );
   const activeFloor =
-    floor !== null && floors.includes(floor)
-      ? floor
-      : floors.length === 1
-        ? floors[0]
-        : null;
+    floor !== null && floors.includes(floor) ? floor : (floors[0] ?? null);
   const rooms =
     building?.space.filter(
       (room) =>
@@ -925,9 +925,7 @@ export function Premise() {
     setSettingsOpen(false);
     requestAnimationFrame(() => {
       mapRef.current
-        ?.querySelector<HTMLElement>(
-          nextFloor === null ? "select#floor" : "[data-map-settings-toggle]",
-        )
+        ?.querySelector<HTMLElement>(`[data-floor-tab="${nextFloor ?? 1}"]`)
         ?.focus({ preventScroll: true });
     });
   }
@@ -1098,7 +1096,6 @@ export function Premise() {
               buildings={premiseData.buildings}
               buildingId={building._id}
               floor={activeFloor}
-              floors={floors}
               times={times}
               timeRef={timeRef}
               intervalValid={Boolean(interval)}
@@ -1107,7 +1104,6 @@ export function Premise() {
                 setBuildingId(nextBuilding);
                 changeFloor(null);
               }}
-              onFloorChange={changeFloor}
               onStartChange={changeStart}
               onEndChange={(value) =>
                 setTimes((previous) => ({ ...previous, end: value }))

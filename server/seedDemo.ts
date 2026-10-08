@@ -46,7 +46,33 @@ const southeastRoom = [
   [77.363, 80.064], [77.363, 78.788], [75.679, 78.788], [75.679, 79.545],
   [72.037, 79.545],
 ];
-const points = (coordinates: number[][]) => coordinates.map(([x, y]) => ({ x, y }));
+const points = (coordinates: number[][]) => coordinates.map((point) => ({ x: point[0]!, y: point[1]! }));
+
+type SeedRoom = { name: string; floor: number; area?: number; mapPolygon: { x: number; y: number }[] };
+
+async function seedRooms(premiseId: mongoose.Types.ObjectId, buildingId: mongoose.Types.ObjectId, userId: mongoose.Types.ObjectId, rooms: SeedRoom[], startdate: Date, enddate: Date) {
+  for (const room of rooms) {
+    const space = await Space.findOneAndUpdate(
+      { premise: premiseId, building: buildingId, name: room.name },
+      { $set: { ...room, premise: premiseId, building: buildingId } },
+      { upsert: true, returnDocument: "after", runValidators: true },
+    );
+    await Building.updateOne({ _id: buildingId }, { $addToSet: { space: space._id } });
+    // Leave existing windows intact so rerunning the seed cannot change their dates
+    // or take ownership of availability that somebody created later.
+    let availability = await Availability.findOne({ space: space._id });
+    if (!availability) availability = await Availability.create({
+      startdate, enddate, premise: premiseId, space: space._id, creator: userId,
+    });
+    await Space.updateOne({ _id: space._id }, { $addToSet: { availabilities: availability._id } });
+    if (availability.creator?.equals(userId)) {
+      await User.updateOne({ _id: userId }, { $addToSet: { availabilities: availability._id } });
+    }
+  }
+  await Building.updateOne({ _id: buildingId }, {
+    $set: { rooms: await Space.countDocuments({ building: buildingId }) },
+  });
+}
 
 async function seed() {
   if (config.node_env === "production" || !/^mongodb:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//.test(config.mongoUri)) {
@@ -102,27 +128,41 @@ async function seed() {
   ];
   const startdate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const enddate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
-  for (const room of rooms) {
-    const space = await Space.findOneAndUpdate(
-      { premise: premise._id, building: building._id, name: room.name },
-      { $set: { ...room, premise: premise._id, building: building._id } },
-      { upsert: true, returnDocument: "after", runValidators: true },
-    );
-    await Building.updateOne({ _id: building._id }, { $addToSet: { space: space._id } });
-    // Leave existing windows intact so rerunning the seed cannot change their dates
-    // or take ownership of availability that somebody created later.
-    let availability = await Availability.findOne({ space: space._id });
-    if (!availability) availability = await Availability.create({
-      startdate, enddate, premise: premise._id, space: space._id, creator: user._id,
+  await seedRooms(premise._id, building._id, user._id, rooms, startdate, enddate);
+
+  const mockLocations = [
+    { name: "Keskustan työtila (mock)", address: "Mallikatu 12, Helsinki (mock)", location: { latitude: 60.1705, longitude: 24.9438 }, floors: 2, prefix: "Keskusta" },
+    { name: "Kallion kokoustalo (mock)", address: "Esimerkkikuja 8, Helsinki (mock)", location: { latitude: 60.183, longitude: 24.953 }, floors: 3, prefix: "Kallio" },
+  ];
+  const mockPolygons = [
+    [[5, 10], [45, 10], [45, 40], [5, 40]],
+    [[55, 10], [95, 10], [95, 40], [55, 40]],
+    [[5, 60], [45, 60], [45, 90], [5, 90]],
+    [[55, 60], [95, 60], [95, 90], [55, 90]],
+  ];
+  for (const mock of mockLocations) {
+    const mockPremise = await Premise.findOneAndUpdate({ name: mock.name }, {
+      $setOnInsert: { name: mock.name, address: mock.address, location: mock.location },
+      $addToSet: { users: user._id },
+    }, { upsert: true, returnDocument: "after", runValidators: true });
+    let mockBuilding = await Building.findOne({ _id: { $in: mockPremise.buildings }, name: "Päärakennus (mock)" });
+    if (!mockBuilding) mockBuilding = await Building.create({
+      name: "Päärakennus (mock)", floors: mock.floors, rooms: mock.floors * 4,
+      location: mock.location,
+      blueprint: Array.from({ length: mock.floors }, (_, index) => ({ floor: index + 1, image: "/assets/mock/floorplan.svg" })),
     });
-    await Space.updateOne({ _id: space._id }, { $addToSet: { availabilities: availability._id } });
-    if (availability.creator?.equals(user._id)) {
-      await User.updateOne({ _id: user._id }, { $addToSet: { availabilities: availability._id } });
-    }
+    await Premise.updateOne({ _id: mockPremise._id }, { $addToSet: { buildings: mockBuilding._id } });
+    await User.updateOne({ _id: user._id }, { $addToSet: { premises: mockPremise._id } });
+    const mockRooms = Array.from({ length: mock.floors }, (_, index) => {
+      const floor = index + 1;
+      return ["Neuvotteluhuone", "Työhuone", "Studio", "Ryhmätila"].map((kind, roomIndex) => ({
+        name: `${kind} ${mock.prefix} ${floor}0${roomIndex + 1}`, floor,
+        area: [32, 24, 48, 40][roomIndex], mapPolygon: points(mockPolygons[roomIndex]!),
+      }));
+    }).flat();
+    await seedRooms(mockPremise._id, mockBuilding._id, user._id, mockRooms, startdate, enddate);
   }
-  await Building.updateOne({ _id: building._id }, {
-    $set: { rooms: await Space.countDocuments({ building: building._id }) },
-  });
+  console.log("Mock locations: Keskustan työtila (2 floors) and Kallion kokoustalo (3 floors).");
   console.log(`Demo premise: http://localhost:${config.port}/premises/${premise._id}`);
   console.log("Demo login: demo.user@edu.hel.fi / DemoPassword1!");
 }
